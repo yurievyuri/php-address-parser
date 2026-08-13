@@ -398,6 +398,38 @@ decision made per thousand addresses. Haiku first; if acceptance says it is not 
 `'effort' => 'low'` before anything larger. Measured on 40 unresolved production addresses, Haiku
 came to **$1.87 per 1000**.
 
+### Postcode register
+
+`service: postcode_register` answers the country from a record instead of inferring it, so it
+belongs **before** any model in the pipeline: every address it settles is one nothing has to guess
+at, and one you do not pay a model for.
+
+```php
+['service' => 'postcode_register', 'dataset' => '/var/data/postcodes.sqlite']
+```
+
+Two ways to run it, and the difference matters when the addresses are customer data:
+
+**Local (recommended).** Point `dataset` at a Code-Point Open copy — Ordnance Survey publish it
+free — and nothing leaves the process. No third party receives anything, so there is no processor
+to contract with and no transfer to assess. Build the file once:
+
+```bash
+php tools/import-code-point-open.php /path/to/unzipped/Data/CSV /var/data/postcodes.sqlite
+```
+
+**HTTP.** Without a dataset the service calls an HTTP register (postcodes.io by default). **Only
+the postcode is ever sent** — the URL is built from the postcode alone and there is no code path
+that puts a street, a company or a name into a request. A test asserts exactly that, because it is
+the property the whole approach rests on: a bare postcode covers about fifteen properties and
+identifies nobody, while the full address string usually identifies someone precisely. Anything not
+postcode-shaped produces no request at all.
+
+Both forms answer the country only. `fill_city` is off by default because a register of this kind
+returns an *administrative district*, and that is not the postal town — EC4M is "City of London" in
+the register and "London" on an envelope. The local dataset does not fill it at all: Code-Point Open
+identifies areas by GSS code (`E07000240`), and a code has no business in a CITY column.
+
 ### libpostal### libpostal
 
 libpostal is a statistical parser trained on tens of millions of addresses. It cannot be loaded

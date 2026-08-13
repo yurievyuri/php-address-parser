@@ -51,6 +51,25 @@ return [
     'escalate_on' => ['country_missing', 'token_lost'],
 
     'services' => [
+        // A postcode register answers from a record rather than by inference, so it goes first:
+        // every address it settles is one no model has to be paid to guess at.
+        //
+        // With 'dataset' it reads a local Code-Point Open copy and touches no network — the right
+        // choice when the addresses belong to customers. Build the file with
+        // tools/import-code-point-open.php. Without 'dataset' it calls an HTTP register, which
+        // receives the postcode and nothing else: no street, no company, no name.
+        [
+            'service' => 'postcode_register',
+            'enabled' => true,
+            'dataset' => $env('POSTCODE_DATASET', '/home/bitrix/data/postcodes.sqlite'),
+            // 'endpoint' => 'https://api.postcodes.io',   // used only when there is no dataset
+            //
+            // Off by default: the register returns an administrative district, which is not the
+            // postal town ("City of London" vs "London"). It never overwrites a town the parser
+            // already found.
+            'fill_city' => false,
+        ],
+
         // Cheap and fast goes first — a libpostal sidecar answers in milliseconds and costs
         // nothing per call.
         [

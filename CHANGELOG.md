@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Postcode register service, in two forms: a local Code-Point Open dataset that touches no network,
+  and an HTTP register that receives the postcode and nothing else. It resolves the country from a
+  record rather than by inference, and runs before the models so they are not paid to guess at
+  addresses a register can settle.
+
 - The model must quote the words it read a country from (`country_evidence`), and a country it
   cannot point to in the address is dropped. On 150 unresolved production addresses this removed
   half of one model's apparent improvements — they were guesses from street names.

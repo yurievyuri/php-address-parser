@@ -151,6 +151,26 @@ final class ConfigurationTest extends TestCase
         ]);
     }
 
+    public function testThePostcodeRegisterCanBeConfiguredWithALocalDataset(): void
+    {
+        $path = sys_get_temp_dir() . '/cpo-cfg-' . bin2hex(random_bytes(4)) . '.sqlite';
+        $pdo = new \PDO('sqlite:' . $path);
+        $pdo->exec('CREATE TABLE postcodes (postcode TEXT PRIMARY KEY, country_code TEXT NOT NULL, district TEXT)');
+        $pdo->exec("INSERT INTO postcodes VALUES ('W1K3DE', 'E92000001', '')");
+
+        try {
+            $parser = (new ParserFactory())->create([
+                'services' => [['service' => 'postcode_register', 'dataset' => $path]],
+            ]);
+
+            $result = $parser->parse('15 Davies Street, W1K 3DE');
+
+            self::assertSame('GB', $result->countryCode);
+        } finally {
+            unlink($path);
+        }
+    }
+
     public function testAnUnknownEffortIsRejectedEarly(): void
     {
         $this->expectException(\InvalidArgumentException::class);

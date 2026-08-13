@@ -18,6 +18,10 @@ use Codelot\AddressParser\Llm\BedrockLlmClient;
 use Codelot\AddressParser\Llm\GeminiLlmClient;
 use Codelot\AddressParser\Llm\GroqLlmClient;
 use Codelot\AddressParser\Llm\LlmClientInterface;
+use Codelot\AddressParser\Postcode\CodePointOpenLookup;
+use Codelot\AddressParser\Postcode\PostcodeLookupInterface;
+use Codelot\AddressParser\Postcode\PostcodesIoLookup;
+use Codelot\AddressParser\Refiner\PostcodeRegisterRefiner;
 use Codelot\AddressParser\Quality\Issue;
 use Codelot\AddressParser\Quality\QualityInspector;
 use Codelot\AddressParser\Refiner\LibpostalRefiner;
@@ -425,6 +429,40 @@ final class ParserFactory
 
     private function registerBuiltins(): void
     {
+        // A postcode register answers from a record instead of inferring, so it belongs before any
+        // model in the pipeline: every address it settles is one nothing has to guess at.
+        //
+        // `dataset` points at a local Code-Point Open copy and reaches no network at all — the
+        // right choice when the addresses are customer data. Without it the service falls back to
+        // an HTTP register, which receives the postcode and nothing else.
+        $this->register('postcode_register', function (array $service): RefinerInterface {
+            $lookup = $service['lookup'] ?? null;
+
+            if (!$lookup instanceof PostcodeLookupInterface) {
+                $lookup = isset($service['dataset'])
+                    ? new CodePointOpenLookup((string) $service['dataset'])
+                    : new PostcodesIoLookup(
+                        baseUrl: (string) ($service['endpoint'] ?? 'https://api.postcodes.io'),
+                        http: HttpClientFactory::create(
+                            connectTimeout: (float) ($service['connect_timeout'] ?? $this->httpDefaults['connect_timeout']),
+                            timeout: (float) ($service['timeout'] ?? $this->httpDefaults['timeout']),
+                        ),
+                        cache: $this->cache,
+                        cacheTtl: (int) ($service['cache_ttl'] ?? 2_592_000),
+                    );
+            }
+
+            return new PostcodeRegisterRefiner(
+                register: $lookup,
+                countries: $this->countries,
+                // An administrative district is not a postal town, so writing it into `city` is
+                // opt-in and never overwrites a town the parser already found.
+                fillCity: (bool) ($service['fill_city'] ?? false),
+                logger: $this->logger,
+                name: (string) ($service['name'] ?? 'postcode-register'),
+            );
+        });
+
         // Claude, through the official SDK, on the Anthropic API or on Bedrock. The default model
         // is the cheapest of the family: splitting an address is extraction against a fixed
         // schema, not reasoning, and this runs over every address that the rules could not resolve.
