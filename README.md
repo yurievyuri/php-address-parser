@@ -59,50 +59,54 @@ The pipeline knows three things about a service and no more: **where it sits in 
 it is a language model, a geocoder, or a lookup against a national postal file is the service's own
 business — the parser never branches on it.
 
-```yaml
-# address-parser.yaml
-http:
-  connect_timeout: 3    # seconds for the TCP + TLS handshake
-  timeout: 10           # seconds for the whole exchange
-
-escalate_on:
-  - country_missing
-  - token_lost
-
-services:
-  - service: libpostal
-    enabled: true
-    endpoint: '${LIBPOSTAL_URL:-http://libpostal.internal:8080/parse}'
-
-  - service: claude
-    enabled: true
-    model: claude-opus-5
-    api_key: '${ANTHROPIC_API_KEY}'
-    # aws_region: '${AWS_REGION}'   # go through Bedrock instead of the Anthropic API
-```
-
 ```php
-use Address\Parser\Config\ParserFactory;
+// address-parser.php — the recommended format: no extra package, opcached, and values can come
+// from wherever the application already keeps them (AppConfig, a parameter store, env).
+return [
+    'http' => [
+        'connect_timeout' => 3,   // seconds for the TCP + TLS handshake
+        'timeout' => 10,          // seconds for the whole exchange
+    ],
 
-$parser = (new ParserFactory(cache: $psr16, logger: $psr3))
-    ->createFromFile(__DIR__ . '/address-parser.yaml');
+    'escalate_on' => ['country_missing', 'token_lost'],
 
-$parser->parse($address);
+    'services' => [
+        [
+            'service' => 'libpostal',
+            'enabled' => true,
+            'endpoint' => getenv('LIBPOSTAL_URL') ?: 'http://libpostal.internal:8080/parse',
+        ],
+        [
+            'service' => 'claude',
+            'enabled' => true,
+            'model' => 'claude-opus-5',
+            'api_key' => getenv('ANTHROPIC_API_KEY') ?: null,
+            // 'aws_region' => getenv('AWS_REGION'),  // go through Bedrock instead
+        ],
+    ],
+];
 ```
 
-`.yaml`, `.json`, and `.php` files all work, and `create()` takes the same structure as a PHP array
-when configuration comes from somewhere else entirely. See
-[`examples/address-parser.yaml`](examples/address-parser.yaml) for a documented file.
+`create()` takes the same structure as a plain array when configuration comes from somewhere else
+entirely. `.php`, `.yaml`, and `.json` files all work — see
+[`examples/address-parser.php`](examples/address-parser.php) and
+[`examples/address-parser.yaml`](examples/address-parser.yaml).
 
-### Secrets
+### Which format
 
-**Any value may reference an environment variable** — `${ANTHROPIC_API_KEY}`, or
-`${LIBPOSTAL_URL:-http://localhost:8080/parse}` with a fallback. References resolve when the
-configuration loads, and one that is unset with no fallback fails **there**, with the variable
-named, rather than as a puzzling HTTP failure later.
+**Prefer PHP.** It needs no extra package, it is opcached like the rest of your code, and a value
+that lives in AWS AppConfig, a parameter store, or a container parameter needs no bridge — read it
+where you build the array. Conditional logic (`'enabled' => $flags->has('address_llm')`) is just
+code.
 
-So the file carries structure — order, on/off, endpoints, model names, limits — and is safe to
-commit; keys stay in the environment, wherever your deployment gets them from.
+YAML is there when a file has to be readable or editable by people who do not write PHP. It needs
+`symfony/yaml` or `ext-yaml`, and in a YAML or JSON file any value may instead reference an
+environment variable — `${ANTHROPIC_API_KEY}`, or `${LIBPOSTAL_URL:-http://localhost:8080/parse}`
+with a fallback. References resolve at load time, and one that is unset with no fallback fails
+**there**, naming the variable, rather than as a puzzling HTTP failure later.
+
+Either way the file carries structure — order, on/off, endpoints, model names, limits — and is safe
+to commit; keys stay in the environment.
 
 ### Which issues can trigger escalation
 

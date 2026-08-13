@@ -19,7 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Providers: an LLM refiner (Claude via the official PHP SDK, on the API or Bedrock; any other
   vendor behind `LlmClientInterface`) and a libpostal HTTP client.
 - Configuration as the whole operating interface: an ordered list of services, each with `enabled`
-  and its own settings, from YAML, JSON, or a PHP array. The pipeline never branches on what a
+  and its own settings, from a PHP file (recommended — no extra package, opcached, and values can
+  be read straight from the application's own configuration source), or from YAML or JSON. The pipeline never branches on what a
   service is. Custom services are named by class or registered under a name.
 - Environment references in configuration (`${VAR}`, `${VAR:-fallback}`), so secrets stay out of the
   file and a missing variable fails at load time with the variable named.

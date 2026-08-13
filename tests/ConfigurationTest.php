@@ -113,17 +113,54 @@ final class ConfigurationTest extends TestCase
         (new ParserFactory())->create(['escalate_on' => ['typo']]);
     }
 
-    public function testTheShippedExampleConfigurationIsValid(): void
+    /**
+     * A PHP file is the recommended format: no extra package, opcached, and values can come from
+     * wherever the application already keeps them.
+     */
+    public function testTheShippedPhpConfigurationIsValid(): void
+    {
+        $parser = (new ParserFactory())->createFromFile(__DIR__ . '/../examples/address-parser.php');
+
+        self::assertSame('15 Davies Street', $parser->parse('15 Davies Street, London, W1K 3DE')->line1);
+    }
+
+    public function testAPhpConfigurationCanBuildAServiceFromComputedSettings(): void
+    {
+        $path = sys_get_temp_dir() . '/address-parser-config-' . bin2hex(random_bytes(4)) . '.php';
+        file_put_contents($path, <<<'PHP'
+            <?php
+
+            // The shape a host application uses: settings computed at load time from its own
+            // environment, with no bridge between that environment and the library.
+            $code = strtoupper(substr('de-DE', 0, 2));
+
+            return ['services' => [['class' => \Address\Parser\Tests\StubRefiner::class, 'countryCode' => $code]]];
+            PHP);
+
+        try {
+            $parser = (new ParserFactory())->createFromFile($path);
+
+            self::assertSame('DE', $parser->parse('Friedrichstrasse 43, Berlin, 10117')->countryCode);
+        } finally {
+            unlink($path);
+        }
+    }
+
+    public function testTheShippedYamlConfigurationIsValid(): void
     {
         if (!class_exists(\Symfony\Component\Yaml\Yaml::class) && !\function_exists('yaml_parse_file')) {
             self::markTestSkipped('needs symfony/yaml or ext-yaml');
         }
 
         putenv('ANTHROPIC_API_KEY=sk-test');
-        $parser = (new ParserFactory())->createFromFile(__DIR__ . '/../examples/address-parser.yaml');
-        putenv('ANTHROPIC_API_KEY');
 
-        self::assertSame('15 Davies Street', $parser->parse('15 Davies Street, London, W1K 3DE')->line1);
+        try {
+            $parser = (new ParserFactory())->createFromFile(__DIR__ . '/../examples/address-parser.yaml');
+
+            self::assertSame('15 Davies Street', $parser->parse('15 Davies Street, London, W1K 3DE')->line1);
+        } finally {
+            putenv('ANTHROPIC_API_KEY');
+        }
     }
 
     /**
