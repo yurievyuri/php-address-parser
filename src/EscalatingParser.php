@@ -70,6 +70,18 @@ final class EscalatingParser implements AddressParserInterface
                 continue;
             }
 
+            // Logged at info because this is the line that answers "how often are we paying for
+            // escalation, and which service is earning its keep".
+            $this->logger->info('address refined', [
+                'service' => $refiner->name(),
+                'address' => $address,
+                'resolved' => array_values(array_diff(
+                    array_map(static fn (Issue $i): string => $i->value, $issues),
+                    array_map(static fn (Issue $i): string => $i->value, $candidateIssues),
+                )),
+                'remaining' => array_map(static fn (Issue $i): string => $i->value, $candidateIssues),
+            ]);
+
             $issues = $candidateIssues;
             $result = $candidate->with([
                 'issues' => array_map(static fn (Issue $i): string => $i->value, $candidateIssues),

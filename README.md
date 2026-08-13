@@ -191,7 +191,7 @@ Severity is used deliberately, not decoratively:
 | Level | Raised when |
 |---|---|
 | `debug` | every parse, with the trace of which rule filled which field |
-| `info` | a refinement was rejected for not improving the result |
+| `info` | an address was refined by a service (which one, what it resolved) — the line that answers "how often are we paying for escalation", or a refinement was rejected for not improving the result |
 | `warning` | a model's answer contained text that was not in the input |
 | `error` | one service failed — the others still ran |
 | `critical` | **every** service failed: escalation is down and addresses are silently degrading to rule-based results |

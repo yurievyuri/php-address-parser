@@ -162,6 +162,26 @@ final class LoggingTest extends TestCase
         self::assertStringContainsString('degraded to rules only', $critical[0]->message);
     }
 
+    public function testASuccessfulEscalationIsRecorded(): void
+    {
+        $factory = new ParserFactory();
+        $parser = $factory->create([
+            'logging' => ['collect' => ['min_level' => 'info']],
+            'services' => [['class' => StubRefiner::class, 'countryCode' => 'DE']],
+        ]);
+
+        $parser->parse('Friedrichstrasse 43, Berlin, 10117');
+
+        $refined = array_values(array_filter(
+            $factory->events()?->records() ?? [],
+            static fn ($r): bool => 'address refined' === $r->message,
+        ));
+
+        self::assertCount(1, $refined, 'paying for a service must leave a trace');
+        self::assertSame('stub', $refined[0]->context['service']);
+        self::assertSame(['country_missing'], $refined[0]->context['resolved']);
+    }
+
     public function testConfigurationBuildsAFileLoggerAtTheGivenPath(): void
     {
         $factory = new ParserFactory();
