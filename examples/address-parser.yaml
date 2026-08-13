@@ -1,37 +1,41 @@
-# Which quality problems justify calling a provider. Omit the key to escalate on any problem.
-#
-# Keep this list tight: every issue listed here is money and latency spent on the addresses that
-# trigger it. `country_missing` and `token_lost` are the two that block downstream systems.
+# The pipeline: rules first, then these services in order — and only while the result is still
+# wrong. The parser knows three things about a service: where it sits in the order, whether it is
+# on, and its settings. What the service actually is, is the service's own business.
+
+# Limits for every service that talks over HTTP. A parser called from a request path must never
+# inherit a client's "wait forever" default.
+http:
+  connect_timeout: 3    # seconds for the TCP + TLS handshake
+  timeout: 10           # seconds for the whole exchange
+
+# Which quality problems justify paying for a service call. Omit to escalate on any problem.
+# Keep the list tight: each entry is money and latency spent on the addresses that trigger it.
 escalate_on:
   - country_missing
   - token_lost
 
-providers:
-  # Consulted in order, and only while the result is still wrong. Put the cheap and fast ones
-  # first — a libpostal sidecar answers in milliseconds and costs nothing per call.
-  - type: libpostal
-    endpoint: 'http://libpostal.internal:8080/parse'
-    timeout: 2.0
-    connect_timeout: 1.0
+services:
+  # Cheap and fast goes first — a libpostal sidecar answers in milliseconds and costs nothing.
+  - service: libpostal
+    enabled: true
+    endpoint: '${LIBPOSTAL_URL:-http://libpostal.internal:8080/parse}'
 
-  - type: llm
-    name: claude
-    # Anthropic API by default. Set aws_region to go through Bedrock instead — the `anthropic.`
-    # model prefix is applied automatically.
-    # aws_region: eu-west-1
+  - service: claude
+    enabled: true
     model: claude-opus-5
     max_tokens: 2048
-    # The API key is read from ANTHROPIC_API_KEY when not given here.
-    # api_key: '...'
-    # Address strings repeat heavily in real data; answers are cached for 30 days by default.
+    # Secrets stay out of this file: the value is read from the environment when the config loads,
+    # and a missing variable is an error here rather than a failed call in production.
+    api_key: '${ANTHROPIC_API_KEY}'
+    # Set aws_region to go through Bedrock instead of the Anthropic API. The `anthropic.` model
+    # prefix is added for you.
+    # aws_region: '${AWS_REGION}'
+    #
+    # Address strings repeat heavily in real data, so answers are cached — 30 days by default.
     cache_ttl: 2592000
 
-  # Anything else — your own class, anywhere in your project.
-  # - type: custom
+  # Anything else: a class from your own project, with its own settings. No registration needed.
+  # - service: paf
   #   class: App\Address\IdealPostcodesRefiner
-  #   options:
-  #     api_key: '...'
-
-  # A provider can be left configured but switched off.
-  # - type: llm
   #   enabled: false
+  #   api_key: '${IDEAL_POSTCODES_KEY}'

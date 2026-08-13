@@ -49,33 +49,60 @@ survives in some output field. The parser redistributes an address, it never del
 That single property catches an entire class of defects — a dropped house number, a vanished town,
 a city truncated to "New" — without anyone having to think of the example first.
 
-## Escalating to a provider
+## Configuring the pipeline
 
-Rules generalise; the long tail does not. `EscalatingParser` runs the rules, inspects the result,
-and consults the configured providers **only while something is still wrong** — so the paid path
-stays rare.
+`EscalatingParser` runs the rules, inspects the result, and consults the configured services **only
+while something is still wrong** — so the paid path stays rare.
+
+The pipeline knows three things about a service and no more: **where it sits in the order**,
+**whether it is on**, and **an opaque bag of settings** that only that service understands. Whether
+it is a language model, a geocoder, or a lookup against a national postal file is the service's own
+business — the parser never branches on it.
+
+```yaml
+# address-parser.yaml
+http:
+  connect_timeout: 3    # seconds for the TCP + TLS handshake
+  timeout: 10           # seconds for the whole exchange
+
+escalate_on:
+  - country_missing
+  - token_lost
+
+services:
+  - service: libpostal
+    enabled: true
+    endpoint: '${LIBPOSTAL_URL:-http://libpostal.internal:8080/parse}'
+
+  - service: claude
+    enabled: true
+    model: claude-opus-5
+    api_key: '${ANTHROPIC_API_KEY}'
+    # aws_region: '${AWS_REGION}'   # go through Bedrock instead of the Anthropic API
+```
 
 ```php
 use Address\Parser\Config\ParserFactory;
 
-$parser = (new ParserFactory(cache: $psr16, logger: $psr3))->create([
-    'escalate_on' => ['country_missing', 'token_lost'],
-    'providers' => [
-        ['type' => 'libpostal', 'endpoint' => 'http://libpostal.internal:8080/parse'],
-        ['type' => 'llm', 'model' => 'claude-opus-5'],
-    ],
-]);
+$parser = (new ParserFactory(cache: $psr16, logger: $psr3))
+    ->createFromFile(__DIR__ . '/address-parser.yaml');
 
 $parser->parse($address);
 ```
 
-Or from a file, with `symfony/yaml` or `ext-yaml` installed:
+`.yaml`, `.json`, and `.php` files all work, and `create()` takes the same structure as a PHP array
+when configuration comes from somewhere else entirely. See
+[`examples/address-parser.yaml`](examples/address-parser.yaml) for a documented file.
 
-```php
-$parser = (new ParserFactory())->createFromYaml(__DIR__ . '/address-parser.yaml');
-```
+### Secrets
 
-See [`examples/address-parser.yaml`](examples/address-parser.yaml) for a documented configuration.
+**Any value may reference an environment variable** — `${ANTHROPIC_API_KEY}`, or
+`${LIBPOSTAL_URL:-http://localhost:8080/parse}` with a fallback. References resolve when the
+configuration loads, and one that is unset with no fallback fails **there**, with the variable
+named, rather than as a puzzling HTTP failure later.
+
+So the file carries structure — order, on/off, endpoints, model names, limits — and is safe to
+commit; keys stay in the environment, wherever your deployment gets them from.
 
 ### Which issues can trigger escalation
 
@@ -83,15 +110,27 @@ See [`examples/address-parser.yaml`](examples/address-parser.yaml) for a documen
 `postcode_missed`, `postcode_implausible`. Omit the key to escalate on any issue at all.
 
 These are the per-address form of the same measures the rule engine is held to over the corpus,
-which is what makes them a sound trigger: they fire on exactly the addresses the rules are known to
-get wrong.
+which is what makes them a sound trigger: they fire on exactly the addresses the rules get wrong.
+
+### Timeouts
+
+A parser is called from a request path, so no service may hang it. The defaults are **3 seconds to
+connect and 10 seconds for the exchange**, set per file under `http:` and overridable per service.
+
+PSR-18 deliberately says nothing about timeouts — they are constructor configuration, different in
+every implementation — so the library constructs the HTTP client itself to enforce them. Pass your
+own client and its configuration wins, including its timeouts.
+
+> The Claude SDK has its own timeout, and its default is generous (minutes). If you run the LLM
+> service on a latency-sensitive path, construct the SDK client with a timeout you chose and pass
+> it in as `client`.
 
 ### Two safeguards worth knowing about
 
-**A refinement is only accepted if it is better.** The result is re-inspected after every provider;
+**A refinement is only accepted if it is better.** The result is re-inspected after every service;
 one that resolves the country but loses the street has made the address worse and is discarded.
 
-**A provider is an improvement, never a dependency.** If it times out or throws, the rule-based
+**A service is an improvement, never a dependency.** If it times out or throws, the rule-based
 result is returned and the failure is logged. An address that parses by rules must not fail because
 a remote service is down.
 
@@ -99,26 +138,25 @@ a remote service is down.
 that supplies a postcode it "knows" for a street is writing plausible, wrong data into your
 records — worse than an address that failed to parse — so such answers are rejected.
 
-## Adding your own provider
+## Adding your own service
 
-Two ways, both of which keep your code out of this package.
+Name the class in the configuration — nothing to register:
 
-Register a factory under a type name:
+```yaml
+services:
+  - service: paf
+    class: App\Address\IdealPostcodesRefiner
+    api_key: '${IDEAL_POSTCODES_KEY}'
+```
+
+Remaining keys are passed to the constructor as named arguments, or to a static `fromConfig()` if
+the class defines one. Alternatively register a factory under a name:
 
 ```php
 $factory = (new ParserFactory())->register(
     'paf',
-    fn (array $options) => new IdealPostcodesRefiner($options['api_key']),
+    fn (array $settings) => new IdealPostcodesRefiner($settings['api_key']),
 );
-```
-
-…or name the class in the configuration:
-
-```yaml
-providers:
-  - type: custom
-    class: App\Address\IdealPostcodesRefiner
-    options: { api_key: '%env(IDEAL_POSTCODES_KEY)%' }
 ```
 
 Either way the class implements `RefinerInterface`:
@@ -134,9 +172,9 @@ interface RefinerInterface
 It receives the original string *and* the draft the rules produced, so it can correct one field
 without re-deriving the rest.
 
-### LLM providers
+### LLM services
 
-The built-in provider talks to Claude through the official PHP SDK (`composer require
+The built-in `claude` service talks to Claude through the official PHP SDK (`composer require
 anthropic-ai/sdk`), on the Anthropic API or on Bedrock — add `aws_region` for the latter and the
 `anthropic.` model prefix is applied for you. Structured output is requested via a JSON schema, so
 the answer is schema-valid rather than JSON-if-we-are-lucky.
@@ -151,8 +189,8 @@ interface LlmClientInterface
 }
 ```
 
-Pass an instance as `['type' => 'llm', 'client' => $yourClient]` and the rest of the pipeline —
-caching, the anti-invention check, the improvement check — works unchanged.
+Pass an instance as the service's `client` setting and the rest of the pipeline — caching, the
+anti-invention check, the improvement check — works unchanged.
 
 **Cache the answers.** Address strings repeat heavily in real data, and a PSR-16 cache passed to
 `ParserFactory` means each distinct address is paid for once.
@@ -161,7 +199,13 @@ caching, the anti-invention check, the improvement check — works unchanged.
 
 libpostal is a statistical parser trained on tens of millions of addresses. It cannot be loaded
 into a PHP process — a C library plus gigabytes of models — so it runs as a sidecar and is reached
-over HTTP. Point the provider at any service that returns libpostal's own label/value pairs.
+over HTTP. Point the service at anything that returns libpostal's own label/value pairs.
+
+### HTTP
+
+Requests go through **PSR-18**, and the client is discovered from what your project already has
+(Guzzle, Symfony HttpClient, anything else). That means your existing middleware applies —
+tracing, retries, proxies, corporate CA bundles — and tests mock a client instead of a socket.
 
 ## The country table
 

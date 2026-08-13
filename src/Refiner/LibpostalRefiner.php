@@ -6,15 +6,18 @@ namespace Address\Parser\Refiner;
 
 use Address\Parser\Country\CountryResolverInterface;
 use Address\Parser\Country\Iso3166CountryResolver;
-use Address\Parser\Http\CurlTransport;
-use Address\Parser\Http\HttpTransportInterface;
+use Address\Parser\Http\HttpClientFactory;
 use Address\Parser\ParsedAddress;
+use Http\Discovery\Psr17FactoryDiscovery;
+use Psr\Http\Client\ClientInterface;
+use Psr\Http\Message\RequestFactoryInterface;
+use Psr\Http\Message\StreamFactoryInterface;
 
 /**
  * A libpostal service, running as a sidecar.
  *
- * libpostal is a statistical parser trained on tens of millions of addresses — it is very good at
- * the component split and knows nothing about countries it was not trained on. It cannot be loaded
+ * libpostal is a statistical parser trained on tens of millions of addresses — very good at the
+ * component split, and it knows nothing about countries it was not trained on. It cannot be loaded
  * into a PHP process (a C library plus gigabytes of models), so it is reached over HTTP.
  *
  * The service is expected to answer with libpostal's own label/value pairs, which is what the
@@ -32,12 +35,23 @@ final class LibpostalRefiner implements RefinerInterface
         'country' => ['country', 'country_region'],
     ];
 
+    private ClientInterface $http;
+
+    private RequestFactoryInterface $requests;
+
+    private StreamFactoryInterface $streams;
+
     public function __construct(
         private readonly string $endpoint,
-        private readonly HttpTransportInterface $http = new CurlTransport(),
+        ?ClientInterface $http = null,
         private readonly CountryResolverInterface $countries = new Iso3166CountryResolver(),
         private readonly string $name = 'libpostal',
+        ?RequestFactoryInterface $requests = null,
+        ?StreamFactoryInterface $streams = null,
     ) {
+        $this->http = $http ?? HttpClientFactory::create();
+        $this->requests = $requests ?? Psr17FactoryDiscovery::findRequestFactory();
+        $this->streams = $streams ?? Psr17FactoryDiscovery::findStreamFactory();
     }
 
     public function name(): string
@@ -49,14 +63,24 @@ final class LibpostalRefiner implements RefinerInterface
     {
         $query = trim(explode('|', $address)[0]);
 
-        $body = $this->http->request(
-            'POST',
-            $this->endpoint,
-            json_encode(['query' => $query], JSON_UNESCAPED_UNICODE) ?: '{}',
-            ['Content-Type' => 'application/json'],
-        );
+        $request = $this->requests
+            ->createRequest('POST', $this->endpoint)
+            ->withHeader('Content-Type', 'application/json')
+            ->withBody($this->streams->createStream(
+                json_encode(['query' => $query], JSON_UNESCAPED_UNICODE) ?: '{}',
+            ));
 
-        $decoded = json_decode($body, true);
+        $response = $this->http->sendRequest($request);
+
+        if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
+            throw new \RuntimeException(sprintf(
+                'libpostal at %s answered HTTP %d',
+                $this->endpoint,
+                $response->getStatusCode(),
+            ));
+        }
+
+        $decoded = json_decode((string) $response->getBody(), true);
 
         if (!is_array($decoded)) {
             return $draft;

@@ -8,7 +8,7 @@ use Address\Parser\AddressParserInterface;
 use Address\Parser\Country\CountryResolverInterface;
 use Address\Parser\Country\Iso3166CountryResolver;
 use Address\Parser\EscalatingParser;
-use Address\Parser\Http\CurlTransport;
+use Address\Parser\Http\HttpClientFactory;
 use Address\Parser\Llm\AnthropicLlmClient;
 use Address\Parser\Llm\LlmClientInterface;
 use Address\Parser\Quality\Issue;
@@ -16,25 +16,32 @@ use Address\Parser\Quality\QualityInspector;
 use Address\Parser\Refiner\LibpostalRefiner;
 use Address\Parser\Refiner\LlmRefiner;
 use Address\Parser\Refiner\RefinerInterface;
+use Address\Parser\RuleBasedParser;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Psr\SimpleCache\CacheInterface;
 
 /**
- * Builds a parser from configuration, so which providers run — and in what order — is a
- * deployment decision rather than a code change.
+ * Builds a parser from configuration.
  *
- * Two ways to add a provider:
- *   1. `register()` a factory under a type name, then reference that name in the configuration;
- *   2. `type: custom` with the class name, for a class that lives anywhere in the host project.
+ * The pipeline knows three things about a service and no more: **where it sits in the order**,
+ * **whether it is on**, and **an opaque bag of settings** that only that service understands.
+ * Whether a service is a language model, a geocoder, or a lookup against a national postal file is
+ * the service's business — the parser never branches on it.
  *
- * Both take the provider from outside this package, which is the point: a PAF lookup, an internal
- * geocoder, or another vendor's model plugs in without touching the library.
+ * Which means: changing provider, model, endpoint, or order is a configuration change. Adding a
+ * kind of provider that does not exist yet is a new class plus one line of configuration.
  */
 final class ParserFactory
 {
-    /** @var array<string, callable(array<string, mixed>): RefinerInterface> */
-    private array $providers = [];
+    /** @var array<string, callable(array<string, mixed>, self): RefinerInterface> */
+    private array $services = [];
+
+    /** @var array{connect_timeout: float, timeout: float} */
+    private array $httpDefaults = [
+        'connect_timeout' => HttpClientFactory::DEFAULT_CONNECT_TIMEOUT,
+        'timeout' => HttpClientFactory::DEFAULT_TIMEOUT,
+    ];
 
     public function __construct(
         private readonly CountryResolverInterface $countries = new Iso3166CountryResolver(),
@@ -45,144 +52,177 @@ final class ParserFactory
     }
 
     /**
-     * @param callable(array<string, mixed>): RefinerInterface $factory
+     * Teach the factory a service name usable in configuration.
+     *
+     * @param callable(array<string, mixed>, self): RefinerInterface $factory
      */
-    public function register(string $type, callable $factory): self
+    public function register(string $name, callable $factory): self
     {
-        $this->providers[$type] = $factory;
+        $this->services[$name] = $factory;
 
         return $this;
     }
 
+    public function countries(): CountryResolverInterface
+    {
+        return $this->countries;
+    }
+
+    public function cache(): ?CacheInterface
+    {
+        return $this->cache;
+    }
+
+    public function logger(): LoggerInterface
+    {
+        return $this->logger;
+    }
+
     /**
-     * @param array{
-     *     escalate_on?: list<string>,
-     *     providers?: list<array<string, mixed>>,
-     *     base?: AddressParserInterface
-     * } $config
+     * The configured HTTP limits, for services that reach the network. A service reads them when
+     * its own settings do not override them.
+     *
+     * @return array{connect_timeout: float, timeout: float}
+     */
+    public function httpTimeouts(): array
+    {
+        return $this->httpDefaults;
+    }
+
+    public function createFromFile(string $path, ?AddressParserInterface $base = null): AddressParserInterface
+    {
+        return $this->create(Configuration::load($path), $base);
+    }
+
+    /**
+     * @param array<string, mixed> $config
      */
     public function create(array $config, ?AddressParserInterface $base = null): AddressParserInterface
     {
+        $config = Configuration::resolve($config);
+
+        /** @var array<string, mixed> $http */
+        $http = $config['http'] ?? [];
+        $this->httpDefaults = [
+            'connect_timeout' => (float) ($http['connect_timeout'] ?? HttpClientFactory::DEFAULT_CONNECT_TIMEOUT),
+            'timeout' => (float) ($http['timeout'] ?? HttpClientFactory::DEFAULT_TIMEOUT),
+        ];
+
         $refiners = [];
 
-        foreach ($config['providers'] ?? [] as $provider) {
-            if (false === ($provider['enabled'] ?? true)) {
+        /** @var list<array<string, mixed>> $services */
+        $services = $config['services'] ?? [];
+
+        foreach ($services as $service) {
+            if (false === ($service['enabled'] ?? true)) {
                 continue;
             }
 
-            $refiners[] = $this->build($provider);
-        }
-
-        $escalateOn = [];
-        foreach ($config['escalate_on'] ?? [] as $issue) {
-            $case = Issue::tryFrom((string) $issue);
-
-            if (null === $case) {
-                throw new \InvalidArgumentException(sprintf(
-                    'unknown issue "%s" in escalate_on; known: %s',
-                    $issue,
-                    implode(', ', array_map(static fn (Issue $i): string => $i->value, Issue::cases())),
-                ));
-            }
-
-            $escalateOn[] = $case;
+            // The defaults are offered through httpTimeouts(), not merged into the settings — a
+            // service that does not speak HTTP must not be handed HTTP settings it cannot accept.
+            $refiners[] = $this->build($service);
         }
 
         return new EscalatingParser(
-            base: $base ?? new \Address\Parser\RuleBasedParser($this->countries, $this->logger),
+            base: $base ?? new RuleBasedParser($this->countries, $this->logger),
             refiners: $refiners,
             inspector: new QualityInspector($this->countries),
-            escalateOn: $escalateOn,
+            escalateOn: $this->issues($config['escalate_on'] ?? []),
             logger: $this->logger,
         );
     }
 
     /**
-     * YAML needs either ext-yaml or symfony/yaml; the PHP-array form in `create()` always works.
+     * @param list<string> $names
+     *
+     * @return list<Issue>
      */
-    public function createFromYaml(string $path): AddressParserInterface
+    private function issues(array $names): array
     {
-        if (!is_readable($path)) {
-            throw new \InvalidArgumentException(sprintf('config file "%s" is not readable', $path));
+        $issues = [];
+
+        foreach ($names as $name) {
+            $case = Issue::tryFrom((string) $name);
+
+            if (null === $case) {
+                throw new \InvalidArgumentException(sprintf(
+                    'unknown issue "%s" in escalate_on; known: %s',
+                    $name,
+                    implode(', ', array_map(static fn (Issue $i): string => $i->value, Issue::cases())),
+                ));
+            }
+
+            $issues[] = $case;
         }
 
-        if (class_exists(\Symfony\Component\Yaml\Yaml::class)) {
-            $config = \Symfony\Component\Yaml\Yaml::parseFile($path);
-        } elseif (\function_exists('yaml_parse_file')) {
-            $config = yaml_parse_file($path);
-        } else {
-            throw new \RuntimeException('reading YAML needs symfony/yaml or ext-yaml — or call create() with a PHP array');
-        }
-
-        if (!is_array($config)) {
-            throw new \InvalidArgumentException(sprintf('config file "%s" does not contain a mapping', $path));
-        }
-
-        /** @var array{escalate_on?: list<string>, providers?: list<array<string, mixed>>} $config */
-        return $this->create($config);
+        return $issues;
     }
 
     /**
-     * @param array<string, mixed> $provider
+     * @param array<string, mixed> $service
      */
-    private function build(array $provider): RefinerInterface
+    private function build(array $service): RefinerInterface
     {
-        $type = (string) ($provider['type'] ?? '');
-
-        if ('custom' === $type) {
-            return $this->buildCustom($provider);
+        // A class named directly needs no registration — it is the escape hatch for a service that
+        // lives in the host project.
+        if (isset($service['class'])) {
+            return $this->buildFromClass((string) $service['class'], $service);
         }
 
-        if (!isset($this->providers[$type])) {
+        $name = (string) ($service['service'] ?? '');
+
+        if (!isset($this->services[$name])) {
             throw new \InvalidArgumentException(sprintf(
-                'unknown provider type "%s"; known: %s, custom',
-                $type,
-                implode(', ', array_keys($this->providers)),
+                'unknown service "%s"; registered: %s (or name a class with "class:")',
+                $name,
+                implode(', ', array_keys($this->services)) ?: 'none',
             ));
         }
 
-        return ($this->providers[$type])($provider);
+        return ($this->services[$name])($service, $this);
     }
 
     /**
-     * @param array<string, mixed> $provider
+     * @param array<string, mixed> $service
      */
-    private function buildCustom(array $provider): RefinerInterface
+    private function buildFromClass(string $class, array $service): RefinerInterface
     {
-        $class = (string) ($provider['class'] ?? '');
-
         if (!class_exists($class)) {
-            throw new \InvalidArgumentException(sprintf('provider class "%s" does not exist', $class));
+            throw new \InvalidArgumentException(sprintf('service class "%s" does not exist', $class));
         }
 
         if (!is_a($class, RefinerInterface::class, true)) {
-            throw new \InvalidArgumentException(sprintf('"%s" does not implement %s', $class, RefinerInterface::class));
+            throw new \InvalidArgumentException(sprintf(
+                '"%s" does not implement %s',
+                $class,
+                RefinerInterface::class,
+            ));
         }
 
-        /** @var array<string, mixed> $options */
-        $options = $provider['options'] ?? [];
+        unset($service['class'], $service['service'], $service['enabled']);
 
-        // A named constructor keeps configuration parsing inside the provider that understands it.
+        // A named constructor keeps the reading of settings inside the class that defines them.
         if (method_exists($class, 'fromConfig')) {
             /** @var RefinerInterface */
-            return $class::fromConfig($options);
+            return $class::fromConfig($service, $this);
         }
 
         /** @var RefinerInterface */
-        return new $class(...$options);
+        return new $class(...$service);
     }
 
     private function registerBuiltins(): void
     {
-        $this->register('llm', function (array $provider): RefinerInterface {
-            $client = $provider['client'] ?? null;
+        // Claude, through the official SDK, on the Anthropic API or on Bedrock.
+        $this->register('claude', function (array $service): RefinerInterface {
+            $client = $service['client'] ?? null;
 
             if (!$client instanceof LlmClientInterface) {
                 $client = new AnthropicLlmClient(
-                    model: (string) ($provider['model'] ?? 'claude-opus-5'),
-                    maxTokens: (int) ($provider['max_tokens'] ?? 2048),
-                    apiKey: isset($provider['api_key']) ? (string) $provider['api_key'] : null,
-                    awsRegion: isset($provider['aws_region']) ? (string) $provider['aws_region'] : null,
+                    model: (string) ($service['model'] ?? 'claude-opus-5'),
+                    maxTokens: (int) ($service['max_tokens'] ?? 2048),
+                    apiKey: isset($service['api_key']) ? (string) $service['api_key'] : null,
+                    awsRegion: isset($service['aws_region']) ? (string) $service['aws_region'] : null,
                 );
             }
 
@@ -190,25 +230,25 @@ final class ParserFactory
                 client: $client,
                 countries: $this->countries,
                 cache: $this->cache,
-                cacheTtl: (int) ($provider['cache_ttl'] ?? 2_592_000),
+                cacheTtl: (int) ($service['cache_ttl'] ?? 2_592_000),
                 logger: $this->logger,
-                name: (string) ($provider['name'] ?? 'llm'),
+                name: (string) ($service['name'] ?? 'claude'),
             );
         });
 
-        $this->register('libpostal', function (array $provider): RefinerInterface {
-            if (!isset($provider['endpoint'])) {
-                throw new \InvalidArgumentException('the libpostal provider needs an "endpoint"');
+        $this->register('libpostal', function (array $service): RefinerInterface {
+            if (!isset($service['endpoint'])) {
+                throw new \InvalidArgumentException('the libpostal service needs an "endpoint"');
             }
 
             return new LibpostalRefiner(
-                endpoint: (string) $provider['endpoint'],
-                http: new CurlTransport(
-                    timeout: (float) ($provider['timeout'] ?? 2.0),
-                    connectTimeout: (float) ($provider['connect_timeout'] ?? 1.0),
+                endpoint: (string) $service['endpoint'],
+                http: $service['http_client'] ?? HttpClientFactory::create(
+                    connectTimeout: (float) ($service['connect_timeout'] ?? $this->httpDefaults['connect_timeout']),
+                    timeout: (float) ($service['timeout'] ?? $this->httpDefaults['timeout']),
                 ),
                 countries: $this->countries,
-                name: (string) ($provider['name'] ?? 'libpostal'),
+                name: (string) ($service['name'] ?? 'libpostal'),
             );
         });
     }
