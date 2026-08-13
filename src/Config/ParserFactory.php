@@ -13,6 +13,7 @@ use Address\Parser\Log\EventCollector;
 use Address\Parser\Log\FileLogger;
 use Address\Parser\Log\NotifierInterface;
 use Address\Parser\Llm\AnthropicLlmClient;
+use Address\Parser\Llm\BedrockLlmClient;
 use Address\Parser\Llm\GeminiLlmClient;
 use Address\Parser\Llm\GroqLlmClient;
 use Address\Parser\Llm\LlmClientInterface;
@@ -313,7 +314,68 @@ final class ParserFactory
             systemPrompt: $this->prompt($service, 'system_prompt', LlmRefiner::DEFAULT_SYSTEM_PROMPT),
             userPrompt: $this->prompt($service, 'user_prompt', LlmRefiner::DEFAULT_USER_PROMPT),
             rejectInventedText: (bool) ($service['reject_invented_text'] ?? true),
+            // Everything the model is given comes from configuration: the prompts, the schema its
+            // answer must satisfy, and how that answer maps onto the result fields.
+            schema: $this->schema($service),
+            fieldMap: isset($service['field_map']) && is_array($service['field_map'])
+                ? array_map('strval', $service['field_map'])
+                : null,
         );
+    }
+
+    /**
+     * `false`, `null`, and an empty string all mean "do not send the parameter" — the API has no
+     * "effort off" value, so the only way to disable it is to leave it out.
+     */
+    private static function effort(mixed $value): ?string
+    {
+        if (null === $value || false === $value || '' === $value) {
+            return null;
+        }
+
+        $effort = strtolower((string) $value);
+        $known = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+        if (!in_array($effort, $known, true)) {
+            throw new \InvalidArgumentException(sprintf(
+                'unknown effort "%s"; expected one of %s, or false to omit it',
+                $value,
+                implode(', ', $known),
+            ));
+        }
+
+        return $effort;
+    }
+
+    /**
+     * The JSON Schema for the model's answer: inline as `schema`, or a path to a JSON file as
+     * `schema_file`. Absent means the library's own.
+     *
+     * @param array<string, mixed> $service
+     *
+     * @return array<string, mixed>|null
+     */
+    private function schema(array $service): ?array
+    {
+        $path = $service['schema_file'] ?? null;
+
+        if (is_string($path) && '' !== $path) {
+            $contents = @file_get_contents($path);
+
+            if (false === $contents) {
+                throw new \InvalidArgumentException(sprintf('cannot read the schema file "%s"', $path));
+            }
+
+            $decoded = json_decode($contents, true);
+
+            if (!is_array($decoded)) {
+                throw new \InvalidArgumentException(sprintf('the schema file "%s" is not valid JSON', $path));
+            }
+
+            return $decoded;
+        }
+
+        return isset($service['schema']) && is_array($service['schema']) ? $service['schema'] : null;
     }
 
     /**
@@ -372,6 +434,21 @@ final class ParserFactory
                 maxTokens: (int) ($service['max_tokens'] ?? 2048),
                 apiKey: isset($service['api_key']) ? (string) $service['api_key'] : null,
                 awsRegion: isset($service['aws_region']) ? (string) $service['aws_region'] : null,
+            ),
+        ));
+
+        // Claude on Bedrock through the AWS SDK — credentials from the instance role, traffic
+        // inside the account, no extra dependency on a project that already runs on AWS.
+        $this->register('bedrock', fn (array $service): RefinerInterface => $this->llm(
+            $service,
+            'bedrock',
+            fn (): LlmClientInterface => new BedrockLlmClient(
+                model: (string) ($service['model'] ?? 'anthropic.claude-haiku-4-5-20251001-v1:0'),
+                region: (string) ($service['region'] ?? getenv('AWS_REGION') ?: 'eu-west-1'),
+                maxTokens: (int) ($service['max_tokens'] ?? 2048),
+                // Omitted by default: several models reject the parameter outright. Set it only for
+                // a model that supports it — Sonnet does, Haiku does not.
+                effort: self::effort($service['effort'] ?? null),
             ),
         ));
 

@@ -73,6 +73,15 @@ final class LlmRefiner implements RefinerInterface
         Return the corrected split.
         PROMPT;
 
+    /** Result field => answer key, when the configuration does not say otherwise. */
+    private const DEFAULT_FIELD_MAP = [
+        'line1' => 'line1',
+        'line2' => 'line2',
+        'city' => 'city',
+        'postcode' => 'postcode',
+        'country_code' => 'country_code',
+    ];
+
     public function __construct(
         private readonly LlmClientInterface $client,
         private readonly CountryResolverInterface $countries = new Iso3166CountryResolver(),
@@ -83,6 +92,15 @@ final class LlmRefiner implements RefinerInterface
         private readonly string $systemPrompt = self::DEFAULT_SYSTEM_PROMPT,
         private readonly string $userPrompt = self::DEFAULT_USER_PROMPT,
         private readonly bool $rejectInventedText = true,
+        /** @var array<string, mixed>|null the JSON Schema sent to the model; null uses the default */
+        private readonly ?array $schema = null,
+        /**
+         * Result field => key in the model's answer. Override when a custom schema names its
+         * fields differently, so a new schema needs no code change.
+         *
+         * @var array<string, string>|null
+         */
+        private readonly ?array $fieldMap = null,
     ) {
     }
 
@@ -103,7 +121,7 @@ final class LlmRefiner implements RefinerInterface
         $data = $this->client->complete(
             $this->systemPrompt,
             $this->renderUserPrompt($address, $draft, $issues),
-            self::schema(),
+            $this->schema ?? self::schema(),
         );
 
         $result = $this->toResult($data, $draft, $spaceInPostCode);
@@ -166,18 +184,21 @@ final class LlmRefiner implements RefinerInterface
      */
     private function toResult(array $data, ParsedAddress $draft, bool $spaceInPostCode): ParsedAddress
     {
-        $code = mb_strtoupper(trim((string) ($data['country_code'] ?? '')));
+        $map = $this->fieldMap ?? self::DEFAULT_FIELD_MAP;
+        $read = static fn (string $field): string => trim((string) ($data[$map[$field] ?? $field] ?? ''));
+
+        $code = mb_strtoupper($read('country_code'));
         $country = '' === $code ? null : $this->countries->resolve($code);
-        $postcode = trim((string) ($data['postcode'] ?? ''));
+        $postcode = $read('postcode');
 
         if (!$spaceInPostCode) {
             $postcode = str_replace([' ', '-'], '', $postcode);
         }
 
         return $draft->with([
-            'line1' => trim((string) ($data['line1'] ?? '')),
-            'line2' => trim((string) ($data['line2'] ?? '')),
-            'city' => trim((string) ($data['city'] ?? '')),
+            'line1' => $read('line1'),
+            'line2' => $read('line2'),
+            'city' => $read('city'),
             'postcode' => $postcode,
             'country' => $country?->name ?? '',
             'country_code' => $country?->alpha2 ?? '',
@@ -214,7 +235,7 @@ final class LlmRefiner implements RefinerInterface
         return 'address.llm.' . hash('xxh128', implode('|', [
             $this->client->describe(),
             (int) $spaceInPostCode,
-            hash('xxh128', $this->systemPrompt . $this->userPrompt),
+            hash('xxh128', $this->systemPrompt . $this->userPrompt . json_encode($this->schema ?? [])),
             $address,
         ]));
     }

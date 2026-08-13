@@ -254,7 +254,11 @@ interface LlmClientInterface
 Pass an instance as the service's `client` setting and the rest of the pipeline — caching, the
 anti-invention check, the improvement check — works unchanged.
 
-**The prompts are configuration too.** `system_prompt` and `user_prompt` (or `system_prompt_file` /
+**Everything the model is given is configuration**: the prompts, the JSON Schema its answer must
+satisfy (`schema`, or `schema_file` pointing at a `.json`), and `field_map` — which answer key fills
+which result field, so a custom schema needs no code change. All three are part of the cache key.
+
+**The prompts.** `system_prompt` and `user_prompt` (or `system_prompt_file` /
 `user_prompt_file`, easier to review as their own files) override the built-in ones per service;
 the user prompt takes `{address}`, `{draft}`, and `{issues}`. Prompts are part of the cache key, so
 editing one never returns answers produced by the previous version.
@@ -270,6 +274,28 @@ common enough that failing on the first one wastes the call.
 
 **Cache the answers.** Address strings repeat heavily in real data, and a PSR-16 cache passed to
 `ParserFactory` means each distinct address is paid for once.
+
+### Bedrock
+
+`service: bedrock` reaches Claude through `aws/aws-sdk-php` rather than the Anthropic SDK:
+credentials come from the instance role, traffic stays inside the account, and a project already on
+AWS adds no dependency. Structured output is a forced tool call, which every Claude version on
+Bedrock supports.
+
+```php
+['service' => 'bedrock', 'model' => 'eu.anthropic.claude-haiku-4-5-20251001-v1:0', 'effort' => false]
+```
+
+Two things to know, both learned the hard way:
+
+**On-demand invocation needs an inference profile, not a bare model id.** `anthropic.claude-…`
+answers *"Invocation … with on-demand throughput isn't supported"*; the regional profile
+(`eu.anthropic.claude-…`) works.
+
+**`effort` is per model, and there is no "off" value.** `false` or omitting the key leaves the
+parameter out entirely, which is what a model that does not support it requires. If a model rejects
+it anyway, the client retries once without it rather than failing — better than a list of model
+names in code that goes stale.
 
 ### libpostal
 

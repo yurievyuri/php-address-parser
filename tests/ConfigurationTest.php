@@ -117,6 +117,29 @@ final class ConfigurationTest extends TestCase
      * A PHP file is the recommended format: no extra package, opcached, and values can come from
      * wherever the application already keeps them.
      */
+    /**
+     * The API has no "effort off" value, so `false` has to mean "leave the parameter out" — Haiku
+     * rejects the request outright when it is present.
+     */
+    public function testEffortFalseIsAcceptedAndMeansOmitted(): void
+    {
+        $parser = (new ParserFactory())->create([
+            'services' => [['service' => 'bedrock', 'effort' => false, 'model' => 'anthropic.claude-haiku-4-5']],
+        ]);
+
+        self::assertSame('15 Davies Street', $parser->parse('15 Davies Street, London, W1K 3DE')->line1);
+    }
+
+    public function testAnUnknownEffortIsRejectedEarly(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/unknown effort "turbo"/');
+
+        (new ParserFactory())->create([
+            'services' => [['service' => 'bedrock', 'effort' => 'turbo']],
+        ]);
+    }
+
     public function testTheShippedPhpConfigurationIsValid(): void
     {
         $parser = (new ParserFactory())->createFromFile(__DIR__ . '/../examples/address-parser.php');
