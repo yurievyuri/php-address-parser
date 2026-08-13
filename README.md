@@ -200,6 +200,61 @@ That last row is the one worth wiring to an alert. A single provider erroring is
 the log; all of them erroring means the pipeline is quietly running at reduced quality, which is
 exactly the failure nobody notices until a report looks wrong weeks later.
 
+## Facades
+
+Two entry points for the two ways this gets used.
+
+### Replacing a legacy static function
+
+When the old parser is called from many places at once and none of them can change, the old
+function becomes one line:
+
+```php
+public static function parseAddressFormat($address = '', bool $spaceInPostCode = false): array
+{
+    return LegacyArrayParser::parse($address, $spaceInPostCode);
+}
+```
+
+Wire the real parser in once, during setup:
+
+```php
+LegacyArrayParser::configure($parser, $logger);
+// or straight from a file:
+LegacyArrayParser::configureFromFile(__DIR__ . '/address-parser.php', $logger);
+```
+
+Two properties make that a one-step change:
+
+**It never throws.** Legacy call sites sit inside event handlers and business processes with no
+error handling, where an exception does not read as a parsing problem — it stops a record from
+saving. A failure of the configured pipeline falls back to the rule engine, and a failure of that
+returns an empty result of the right shape.
+
+**It accepts what the untyped signature accepted** — `null`, numbers, `Stringable`, and even an
+already-parsed array, which is reassembled rather than mangled by a second parse.
+
+`parseToObject()` is there for the call sites that can use more than six keys — the trace, the
+issues, which service answered.
+
+### Running over many addresses
+
+```php
+$summary = (new BatchParser($parser, $logger))->run($addresses);
+
+$summary->total;         // 449719
+$summary->escalated();   // how many were answered by a paid service
+$summary->byIssue;       // what is still wrong, by kind
+$summary->toArray();     // ready for a report, a log line, or an alert
+```
+
+One bad row cannot end a run of a hundred thousand — failures are logged, counted, and skipped.
+`map()` does the same lazily and yields results one at a time, so an export need not fit in memory.
+
+The batch inspects every result itself rather than trusting the `issues` field, because only the
+escalating parser fills that in — otherwise a run over the bare rule engine would report a clean
+sweep over addresses it never examined.
+
 ## Adding your own service
 
 Name the class in the configuration — nothing to register:

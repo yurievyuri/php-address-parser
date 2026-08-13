@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Facade\LegacyArrayParser` — a drop-in replacement for a legacy static parsing function: returns
+  the legacy key set, accepts everything an untyped signature accepted, and never throws (a failing
+  pipeline falls back to the rule engine).
+- `Batch\BatchParser` and `BatchSummary` — running over many addresses with per-source and
+  per-issue tallies, survivable failures, and a lazy `map()` for exports that do not fit in memory.
+
 - Package name `codelot/address-parser` with the `Codelot\AddressParser\` namespace. A generic
   top-level namespace invites collisions with other packages and with host-project code; PSR-4
   expects a vendor name there.
