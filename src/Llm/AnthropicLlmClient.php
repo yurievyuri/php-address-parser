@@ -17,8 +17,13 @@ final class AnthropicLlmClient implements LlmClientInterface
      * @param object|null $client an Anthropic\Client or Anthropic\Bedrock\MantleClient; built from
      *                            $apiKey / $awsRegion when omitted
      */
+    /**
+     * @param string $model an Anthropic API model id — no `eu.`/`anthropic.` prefix, that is the
+     *                      Bedrock naming. The default is the cheapest of the family: splitting an
+     *                      address is extraction against a fixed schema, not reasoning.
+     */
     public function __construct(
-        private readonly string $model = 'claude-opus-5',
+        private readonly string $model = 'claude-haiku-4-5',
         private readonly int $maxTokens = 2048,
         private readonly ?string $apiKey = null,
         private readonly ?string $awsRegion = null,

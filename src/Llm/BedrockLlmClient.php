@@ -30,11 +30,14 @@ final class BedrockLlmClient implements LlmClientInterface
     public ?array $lastUsage = null;
 
     /**
+     * @param string      $model   an inference profile id (`eu.anthropic.…`): on-demand invocation
+     *                             rejects a bare model id with "Invocation … with on-demand
+     *                             throughput isn't supported"
      * @param string|null $effort  reasoning effort (low|medium|high|xhigh|max), or null to omit the
      *                             parameter — models that do not support it reject the request
      */
     public function __construct(
-        private readonly string $model = 'anthropic.claude-haiku-4-5-20251001-v1:0',
+        private readonly string $model = 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
         private readonly string $region = 'eu-west-1',
         private readonly int $maxTokens = 2048,
         private readonly ?string $effort = null,

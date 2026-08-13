@@ -340,7 +340,7 @@ same `toolUse` block from each.
 ```php
 [
     'service' => 'bedrock',
-    'model' => 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',  // or eu.amazon.nova-lite-v1:0, mistral.…, qwen.…
+    'model' => 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
     'effort' => false,                    // false or absent = do not send the parameter
     'model_fields' => [],                 // vendor-specific extras, passed through untouched
     // 'api' => 'invoke',                 // the older InvokeModel path, for a model Converse omits
@@ -355,7 +355,17 @@ Four things worth knowing, all learned against the live API:
 
 **On-demand invocation needs an inference profile, not a bare model id.** `anthropic.claude-…`
 answers *"Invocation … with on-demand throughput isn't supported"*; the regional profile
-(`eu.anthropic.claude-…`) works.
+(`eu.anthropic.claude-…`) works. Ids verified against a live account, 2026-08-13:
+
+| Vendor | Model id |
+|---|---|
+| Anthropic | `eu.anthropic.claude-haiku-4-5-20251001-v1:0` (cheapest, no `effort`), `eu.anthropic.claude-sonnet-5` (takes `effort`), `eu.anthropic.claude-opus-5` |
+| Amazon | `eu.amazon.nova-micro-v1:0`, `eu.amazon.nova-lite-v1:0`, `eu.amazon.nova-pro-v1:0` |
+| Mistral | `eu.mistral.pixtral-large-2502-v1:0`, `mistral.ministral-3-3b-instruct` |
+| Alibaba | `qwen.qwen3-32b-v1:0` |
+| OpenAI (OSS) | `openai.gpt-oss-120b-1:0` |
+
+Models without a regional profile are invoked by their plain id, as in the last three rows.
 
 **Vendor-specific parameters live in `model_fields`**, not in code, because what belongs there
 differs per model. Claude Haiku rejects `output_config.effort` outright — *"Extra inputs are not

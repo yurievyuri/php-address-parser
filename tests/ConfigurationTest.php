@@ -124,7 +124,7 @@ final class ConfigurationTest extends TestCase
     public function testEffortFalseIsAcceptedAndMeansOmitted(): void
     {
         $parser = (new ParserFactory())->create([
-            'services' => [['service' => 'bedrock', 'effort' => false, 'model' => 'anthropic.claude-haiku-4-5']],
+            'services' => [['service' => 'bedrock', 'effort' => false, 'model' => 'eu.anthropic.claude-haiku-4-5-20251001-v1:0']],
         ]);
 
         self::assertSame('15 Davies Street', $parser->parse('15 Davies Street, London, W1K 3DE')->line1);

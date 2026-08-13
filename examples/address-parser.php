@@ -59,6 +59,31 @@ return [
             'endpoint' => $env('LIBPOSTAL_URL', 'http://libpostal.internal:8080/parse'),
         ],
 
+        // Bedrock through the Converse API — the same request shape for every vendor, so switching
+        // is a modelId. Model ids below are inference profiles, which on-demand invocation
+        // requires: a bare "anthropic.claude-…" answers "Invocation … with on-demand throughput
+        // isn't supported". These are the EU profiles active in our accounts (2026-08-13):
+        //
+        //   Anthropic  eu.anthropic.claude-haiku-4-5-20251001-v1:0   cheapest, no effort support
+        //              eu.anthropic.claude-sonnet-5                  accepts effort
+        //              eu.anthropic.claude-opus-5                    strongest, priciest
+        //   Amazon     eu.amazon.nova-micro-v1:0 / nova-lite-v1:0 / nova-pro-v1:0 / nova-2-lite-v1:0
+        //   Mistral    eu.mistral.pixtral-large-2502-v1:0
+        //
+        // Models without a regional profile are invoked by plain id, e.g. qwen.qwen3-32b-v1:0,
+        // openai/gpt-oss-120b-1:0, mistral.ministral-3-3b-instruct.
+        [
+            'service' => 'bedrock',
+            'enabled' => false,
+            'model' => 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+            'region' => $env('AWS_REGION', 'eu-west-1'),
+            'max_tokens' => 2048,
+            // Haiku rejects the parameter outright; Sonnet accepts it. false = do not send it.
+            'effort' => false,
+            // Vendor-specific extras, passed through untouched.
+            'model_fields' => [],
+        ],
+
         [
             'service' => 'claude',
             'enabled' => null !== $env('ANTHROPIC_API_KEY') || null !== $env('AWS_REGION'),
@@ -77,7 +102,7 @@ return [
             'cache_ttl' => 2_592_000,
         ],
 
-        // Google Gemini, over its REST API.
+        // Google Gemini, over its REST API. gemini-flash-latest verified 2026-08-13.
         // [
         //     'service' => 'gemini',
         //     'enabled' => true,
@@ -85,8 +110,10 @@ return [
         //     'api_key' => $env('GEMINI_API_KEY'),
         // ],
 
-        // Groq Cloud, and any other OpenAI-compatible endpoint via base_url. Note that not every
-        // model there supports json_schema output — gpt-oss and qwen do, llama-3.3 does not.
+        // Groq Cloud, and any other OpenAI-compatible endpoint via base_url. Not every model there
+        // supports json_schema output: openai/gpt-oss-120b and qwen/qwen3.6-27b do (verified
+        // 2026-08-13), llama-3.3-70b-versatile answers "This model does not support response
+        // format json_schema".
         // [
         //     'service' => 'groq',
         //     'enabled' => true,
