@@ -9,7 +9,12 @@ use Address\Parser\Country\CountryResolverInterface;
 use Address\Parser\Country\Iso3166CountryResolver;
 use Address\Parser\EscalatingParser;
 use Address\Parser\Http\HttpClientFactory;
+use Address\Parser\Log\EventCollector;
+use Address\Parser\Log\FileLogger;
+use Address\Parser\Log\NotifierInterface;
 use Address\Parser\Llm\AnthropicLlmClient;
+use Address\Parser\Llm\GeminiLlmClient;
+use Address\Parser\Llm\GroqLlmClient;
 use Address\Parser\Llm\LlmClientInterface;
 use Address\Parser\Quality\Issue;
 use Address\Parser\Quality\QualityInspector;
@@ -18,6 +23,7 @@ use Address\Parser\Refiner\LlmRefiner;
 use Address\Parser\Refiner\RefinerInterface;
 use Address\Parser\RuleBasedParser;
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 use Psr\Log\NullLogger;
 use Psr\SimpleCache\CacheInterface;
 
@@ -43,11 +49,16 @@ final class ParserFactory
         'timeout' => HttpClientFactory::DEFAULT_TIMEOUT,
     ];
 
+    private LoggerInterface $logger;
+
+    private ?EventCollector $events = null;
+
     public function __construct(
         private readonly CountryResolverInterface $countries = new Iso3166CountryResolver(),
         private readonly ?CacheInterface $cache = null,
-        private readonly LoggerInterface $logger = new NullLogger(),
+        ?LoggerInterface $logger = null,
     ) {
+        $this->logger = $logger ?? new NullLogger();
         $this->registerBuiltins();
     }
 
@@ -79,6 +90,18 @@ final class ParserFactory
     }
 
     /**
+     * What went wrong during parsing, in memory, filterable by PSR-3 severity.
+     *
+     * Present once `logging.collect` is configured. This is the handle for asking after a batch
+     * "did anything serious happen?" and for handing the serious part to another part of the
+     * system without reading a log file.
+     */
+    public function events(): ?EventCollector
+    {
+        return $this->events;
+    }
+
+    /**
      * The configured HTTP limits, for services that reach the network. A service reads them when
      * its own settings do not override them.
      *
@@ -100,6 +123,7 @@ final class ParserFactory
     public function create(array $config, ?AddressParserInterface $base = null): AddressParserInterface
     {
         $config = Configuration::resolve($config);
+        $this->configureLogging($config['logging'] ?? []);
 
         /** @var array<string, mixed> $http */
         $http = $config['http'] ?? [];
@@ -130,6 +154,63 @@ final class ParserFactory
             escalateOn: $this->issues($config['escalate_on'] ?? []),
             logger: $this->logger,
         );
+    }
+
+    /**
+     * Builds the logging stack from configuration: a file logger when a path is given, wrapped in
+     * a collector when in-memory collection is asked for. A logger passed to the constructor wins
+     * — an application with Monolog keeps its own pipeline.
+     *
+     * @param array<string, mixed> $logging
+     */
+    private function configureLogging(array $logging): void
+    {
+        if ([] === $logging) {
+            return;
+        }
+
+        $base = $this->logger;
+
+        if ($base instanceof NullLogger && isset($logging['path'])) {
+            $base = new FileLogger(
+                path: (string) $logging['path'],
+                minLevel: (string) ($logging['level'] ?? LogLevel::INFO),
+                channel: (string) ($logging['channel'] ?? 'address'),
+            );
+        }
+
+        /** @var array<string, mixed> $collect */
+        $collect = $logging['collect'] ?? [];
+
+        if ([] === $collect || false === ($collect['enabled'] ?? true)) {
+            $this->logger = $base;
+
+            return;
+        }
+
+        $notifier = $collect['notifier'] ?? null;
+
+        if (is_string($notifier) && '' !== $notifier) {
+            if (!class_exists($notifier) || !is_a($notifier, NotifierInterface::class, true)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'the notifier "%s" must exist and implement %s',
+                    $notifier,
+                    NotifierInterface::class,
+                ));
+            }
+
+            $notifier = new $notifier();
+        }
+
+        $this->events = new EventCollector(
+            inner: $base,
+            minLevel: (string) ($collect['min_level'] ?? LogLevel::WARNING),
+            notifier: $notifier instanceof NotifierInterface ? $notifier : null,
+            notifyLevel: (string) ($collect['notify_level'] ?? LogLevel::CRITICAL),
+            limit: (int) ($collect['limit'] ?? 1000),
+        );
+
+        $this->logger = $this->events;
     }
 
     /**
@@ -211,30 +292,119 @@ final class ParserFactory
         return new $class(...$service);
     }
 
-    private function registerBuiltins(): void
+    /**
+     * Wraps any LLM client in the refiner, with the caching and anti-invention checks that every
+     * model-backed service gets regardless of vendor.
+     *
+     * @param array<string, mixed>       $service
+     * @param callable(): LlmClientInterface $default
+     */
+    private function llm(array $service, string $name, callable $default): RefinerInterface
     {
-        // Claude, through the official SDK, on the Anthropic API or on Bedrock.
-        $this->register('claude', function (array $service): RefinerInterface {
-            $client = $service['client'] ?? null;
+        $client = $service['client'] ?? null;
 
-            if (!$client instanceof LlmClientInterface) {
-                $client = new AnthropicLlmClient(
-                    model: (string) ($service['model'] ?? 'claude-opus-5'),
-                    maxTokens: (int) ($service['max_tokens'] ?? 2048),
-                    apiKey: isset($service['api_key']) ? (string) $service['api_key'] : null,
-                    awsRegion: isset($service['aws_region']) ? (string) $service['aws_region'] : null,
-                );
+        return new LlmRefiner(
+            client: $client instanceof LlmClientInterface ? $client : $default(),
+            countries: $this->countries,
+            cache: $this->cache,
+            cacheTtl: (int) ($service['cache_ttl'] ?? 2_592_000),
+            logger: $this->logger,
+            name: (string) ($service['name'] ?? $name),
+            systemPrompt: $this->prompt($service, 'system_prompt', LlmRefiner::DEFAULT_SYSTEM_PROMPT),
+            userPrompt: $this->prompt($service, 'user_prompt', LlmRefiner::DEFAULT_USER_PROMPT),
+            rejectInventedText: (bool) ($service['reject_invented_text'] ?? true),
+        );
+    }
+
+    /**
+     * A prompt may be given inline or as a path to a file — long prompts are easier to review and
+     * diff as their own file. `<key>_file` wins when both are present.
+     *
+     * @param array<string, mixed> $service
+     */
+    private function prompt(array $service, string $key, string $default): string
+    {
+        $path = $service[$key . '_file'] ?? null;
+
+        if (is_string($path) && '' !== $path) {
+            $contents = @file_get_contents($path);
+
+            if (false === $contents) {
+                throw new \InvalidArgumentException(sprintf('cannot read the prompt file "%s"', $path));
             }
 
-            return new LlmRefiner(
-                client: $client,
-                countries: $this->countries,
-                cache: $this->cache,
-                cacheTtl: (int) ($service['cache_ttl'] ?? 2_592_000),
-                logger: $this->logger,
-                name: (string) ($service['name'] ?? 'claude'),
-            );
-        });
+            return $contents;
+        }
+
+        $inline = $service[$key] ?? null;
+
+        return is_string($inline) && '' !== trim($inline) ? $inline : $default;
+    }
+
+    /**
+     * @param array<string, mixed> $service
+     */
+    private function requireSetting(array $service, string $key, string $service_name): string
+    {
+        $value = $service[$key] ?? null;
+
+        if (!is_string($value) || '' === $value) {
+            throw new \InvalidArgumentException(sprintf(
+                'the %s service needs "%s" — read it from the environment rather than writing it into the file',
+                $service_name,
+                $key,
+            ));
+        }
+
+        return $value;
+    }
+
+    private function registerBuiltins(): void
+    {
+        // Claude, through the official SDK, on the Anthropic API or on Bedrock. The default model
+        // is the cheapest of the family: splitting an address is extraction against a fixed
+        // schema, not reasoning, and this runs over every address that the rules could not resolve.
+        $this->register('claude', fn (array $service): RefinerInterface => $this->llm(
+            $service,
+            'claude',
+            fn (): LlmClientInterface => new AnthropicLlmClient(
+                model: (string) ($service['model'] ?? 'claude-haiku-4-5'),
+                maxTokens: (int) ($service['max_tokens'] ?? 2048),
+                apiKey: isset($service['api_key']) ? (string) $service['api_key'] : null,
+                awsRegion: isset($service['aws_region']) ? (string) $service['aws_region'] : null,
+            ),
+        ));
+
+        // Google Gemini, over its REST API — native JSON-schema output.
+        $this->register('gemini', fn (array $service): RefinerInterface => $this->llm(
+            $service,
+            'gemini',
+            fn (): LlmClientInterface => new GeminiLlmClient(
+                apiKey: $this->requireSetting($service, 'api_key', 'gemini'),
+                model: (string) ($service['model'] ?? 'gemini-flash-latest'),
+                maxTokens: (int) ($service['max_tokens'] ?? 2048),
+                http: HttpClientFactory::create(
+                    connectTimeout: (float) ($service['connect_timeout'] ?? $this->httpDefaults['connect_timeout']),
+                    timeout: (float) ($service['timeout'] ?? $this->httpDefaults['timeout']),
+                ),
+            ),
+        ));
+
+        // Groq Cloud, and any other OpenAI-compatible endpoint via base_url.
+        $this->register('groq', fn (array $service): RefinerInterface => $this->llm(
+            $service,
+            'groq',
+            fn (): LlmClientInterface => new GroqLlmClient(
+                apiKey: $this->requireSetting($service, 'api_key', 'groq'),
+                model: (string) ($service['model'] ?? 'openai/gpt-oss-120b'),
+                maxTokens: (int) ($service['max_tokens'] ?? 2048),
+                baseUrl: (string) ($service['base_url'] ?? 'https://api.groq.com/openai/v1'),
+                http: HttpClientFactory::create(
+                    connectTimeout: (float) ($service['connect_timeout'] ?? $this->httpDefaults['connect_timeout']),
+                    timeout: (float) ($service['timeout'] ?? $this->httpDefaults['timeout']),
+                ),
+            ),
+        ));
 
         $this->register('libpostal', function (array $service): RefinerInterface {
             if (!isset($service['endpoint'])) {

@@ -39,14 +39,20 @@ final class EscalatingParser implements AddressParserInterface
         $issues = $this->inspector->inspect($address, $result);
         $result = $result->with(['issues' => array_map(static fn (Issue $i): string => $i->value, $issues)]);
 
+        $consulted = 0;
+        $failed = 0;
+
         foreach ($this->refiners as $refiner) {
             if (!$this->shouldEscalate($issues)) {
                 return $result;
             }
 
+            ++$consulted;
             $candidate = $this->tryRefiner($refiner, $address, $result, $issues, $spaceInPostCode);
 
             if (null === $candidate) {
+                ++$failed;
+
                 continue;
             }
 
@@ -68,6 +74,17 @@ final class EscalatingParser implements AddressParserInterface
             $result = $candidate->with([
                 'issues' => array_map(static fn (Issue $i): string => $i->value, $candidateIssues),
                 'source' => $refiner->name(),
+            ]);
+        }
+
+        // One provider failing is an incident for the log. Every provider failing means the
+        // escalation path is down as a whole — addresses are silently degrading to rule-based
+        // results, and somebody should be told rather than discover it in a report next week.
+        if ($consulted > 0 && $failed === $consulted) {
+            $this->logger->critical('every refinement service failed; parsing degraded to rules only', [
+                'address' => $address,
+                'services' => array_map(static fn (RefinerInterface $r): string => $r->name(), $this->refiners),
+                'issues' => array_map(static fn (Issue $i): string => $i->value, $issues),
             ]);
         }
 

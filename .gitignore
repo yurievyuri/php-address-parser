@@ -9,3 +9,10 @@
 
 # Address corpora are real customer data — never commit them.
 /tests/fixtures/prod-*.txt
+
+# Local configuration and anything holding credentials.
+/.env
+/.env.*
+*.local.php
+/config.local.*
+/scratch/

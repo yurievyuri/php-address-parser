@@ -26,6 +26,26 @@ return [
         'timeout' => 10,          // seconds for the whole exchange
     ],
 
+    // PSR-3 logging. Pass your own logger to ParserFactory and this whole block is ignored —
+    // it exists so a project without Monolog is still observable out of the box.
+    'logging' => [
+        'path' => $env('ADDRESS_PARSER_LOG', '/home/bitrix/debug/address/parser.log'),
+        'level' => 'info',      // debug | info | notice | warning | error | critical | alert | emergency
+        'channel' => 'address',
+
+        // Keep events in memory as well, so a batch can be asked "did anything serious happen?"
+        // without reading the file: $factory->events()->criticalRecords().
+        'collect' => [
+            'enabled' => true,
+            'min_level' => 'warning',    // what is kept in memory
+            'notify_level' => 'critical',// from which severity the notifier is called
+            'limit' => 1000,             // cap on retained records, so a long batch stays bounded
+            // A class implementing Address\Parser\Log\NotifierInterface — this is the hand-off
+            // to the rest of the system: alerting, a queue, a webhook.
+            // 'notifier' => App\Address\SlackNotifier::class,
+        ],
+    ],
+
     // Which quality problems justify paying for a service call. Omit to escalate on any problem.
     // Keep the list tight: each entry is money and latency spent on the addresses that trigger it.
     'escalate_on' => ['country_missing', 'token_lost'],
@@ -42,7 +62,9 @@ return [
         [
             'service' => 'claude',
             'enabled' => null !== $env('ANTHROPIC_API_KEY') || null !== $env('AWS_REGION'),
-            'model' => $env('ADDRESS_PARSER_MODEL', 'claude-opus-5'),
+            // Splitting an address is extraction against a fixed schema, not reasoning, so the
+            // cheapest model of the family is the right default. Move up if acceptance says so.
+            'model' => $env('ADDRESS_PARSER_MODEL', 'claude-haiku-4-5'),
             'max_tokens' => 2048,
             // Secrets are read here, from wherever the application's environment came from, and
             // never written into a file that goes into git.
@@ -54,6 +76,27 @@ return [
             // Address strings repeat heavily in real data, so answers are cached — 30 days.
             'cache_ttl' => 2_592_000,
         ],
+
+        // Google Gemini, over its REST API.
+        // [
+        //     'service' => 'gemini',
+        //     'enabled' => true,
+        //     'model' => 'gemini-flash-latest',
+        //     'api_key' => $env('GEMINI_API_KEY'),
+        // ],
+
+        // Groq Cloud, and any other OpenAI-compatible endpoint via base_url. Note that not every
+        // model there supports json_schema output — gpt-oss and qwen do, llama-3.3 does not.
+        // [
+        //     'service' => 'groq',
+        //     'enabled' => true,
+        //     'model' => 'openai/gpt-oss-120b',
+        //     'api_key' => $env('GROQ_API_KEY'),
+        // ],
+
+        // Prompts are configuration too: override them per service, inline or from a file.
+        // 'system_prompt_file' => __DIR__ . '/prompts/address-system.txt',
+        // 'user_prompt' => "Address:\n{address}\n\nDraft: {draft}\nProblems: {issues}",
 
         // Anything else: a class from your own project, with its own settings.
         // [

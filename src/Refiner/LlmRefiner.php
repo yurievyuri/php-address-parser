@@ -24,7 +24,7 @@ use Psr\SimpleCache\CacheInterface;
  */
 final class LlmRefiner implements RefinerInterface
 {
-    private const SYSTEM_PROMPT = <<<'PROMPT'
+    public const DEFAULT_SYSTEM_PROMPT = <<<'PROMPT'
         You split postal addresses into structured components. The addresses come from a CRM, are
         written by people in many countries, and are frequently malformed.
 
@@ -34,8 +34,20 @@ final class LlmRefiner implements RefinerInterface
           one is not.
         - Every meaningful word of the input must appear in exactly one output field. If you are
           unsure where a word belongs, put it in line1.
-        - country_code is the ISO 3166-1 alpha-2 code, uppercase, and only when the input names the
-          country or carries a postcode whose format identifies it unambiguously. Empty otherwise.
+        - country_code is the ISO 3166-1 alpha-2 code, uppercase. Weigh the evidence in the address
+          in this order, strongest first:
+            1. the country is named outright, including as an adjective or a constituent country
+               ("England" is GB);
+            2. a city, region, or district that identifies one country ("Dubai", "Al Barsha");
+            3. the language, script, or naming conventions of the street and place names
+               ("Friedrichstrasse" is German, Hebrew script with an Israeli city is IL,
+               "Rue"/"Bd." with a Monegasque district is MC);
+            4. the postcode, and only as the last and weakest signal. Postcode formats collide
+               across countries — five digits are German, French, Spanish, American and more — so a
+               postcode alone almost never settles the question. It may confirm what the stronger
+               evidence already says, and should not outvote it.
+          Leave country_code empty when the evidence is genuinely ambiguous. An address with
+          nothing but a street number and a five-digit code decides nothing.
         - A UK postcode is written as outward code, a space, then the inward code (three
           characters), e.g. "B60 3DJ".
         - city is the settlement. It is never a country name unless the settlement really is named
@@ -45,6 +57,22 @@ final class LlmRefiner implements RefinerInterface
         Return the fields empty rather than guessing.
         PROMPT;
 
+    /**
+     * Placeholders: {address} the input, {draft} the rule-based result as JSON, {issues} what the
+     * inspector found wrong with it.
+     */
+    public const DEFAULT_USER_PROMPT = <<<'PROMPT'
+        Address:
+        {address}
+
+        A rule-based parser produced:
+        {draft}
+
+        Problems detected: {issues}
+
+        Return the corrected split.
+        PROMPT;
+
     public function __construct(
         private readonly LlmClientInterface $client,
         private readonly CountryResolverInterface $countries = new Iso3166CountryResolver(),
@@ -52,6 +80,9 @@ final class LlmRefiner implements RefinerInterface
         private readonly int $cacheTtl = 2_592_000,
         private readonly LoggerInterface $logger = new NullLogger(),
         private readonly string $name = 'llm',
+        private readonly string $systemPrompt = self::DEFAULT_SYSTEM_PROMPT,
+        private readonly string $userPrompt = self::DEFAULT_USER_PROMPT,
+        private readonly bool $rejectInventedText = true,
     ) {
     }
 
@@ -70,14 +101,14 @@ final class LlmRefiner implements RefinerInterface
         }
 
         $data = $this->client->complete(
-            self::SYSTEM_PROMPT,
-            $this->userPrompt($address, $draft, $issues),
+            $this->systemPrompt,
+            $this->renderUserPrompt($address, $draft, $issues),
             self::schema(),
         );
 
         $result = $this->toResult($data, $draft, $spaceInPostCode);
 
-        if (!$this->onlyUsesInputWords($address, $result)) {
+        if ($this->rejectInventedText && !$this->onlyUsesInputWords($address, $result)) {
             $this->logger->warning('llm refinement rejected: it introduced text that is not in the input', [
                 'address' => $address,
                 'result' => $result->toLegacyArray(),
@@ -94,15 +125,18 @@ final class LlmRefiner implements RefinerInterface
     /**
      * @param list<Issue> $issues
      */
-    private function userPrompt(string $address, ParsedAddress $draft, array $issues): string
+    private function renderUserPrompt(string $address, ParsedAddress $draft, array $issues): string
     {
         $problems = implode(', ', array_map(static fn (Issue $i): string => $i->value, $issues));
 
-        return sprintf(
-            "Address:\n%s\n\nA rule-based parser produced:\n%s\n\nProblems detected: %s\n\nReturn the corrected split.",
-            trim(explode('|', $address)[0]),
-            json_encode($draft->toLegacyArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) ?: '{}',
-            '' === $problems ? 'none' : $problems,
+        return str_replace(
+            ['{address}', '{draft}', '{issues}'],
+            [
+                trim(explode('|', $address)[0]),
+                json_encode($draft->toLegacyArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) ?: '{}',
+                '' === $problems ? 'none' : $problems,
+            ],
+            $this->userPrompt,
         );
     }
 
@@ -175,7 +209,14 @@ final class LlmRefiner implements RefinerInterface
 
     private function cacheKey(string $address, bool $spaceInPostCode): string
     {
-        return 'address.llm.' . hash('xxh128', $this->client->describe() . '|' . (int) $spaceInPostCode . '|' . $address);
+        // The prompts are part of the key: editing a prompt must not return answers produced by
+        // the previous one.
+        return 'address.llm.' . hash('xxh128', implode('|', [
+            $this->client->describe(),
+            (int) $spaceInPostCode,
+            hash('xxh128', $this->systemPrompt . $this->userPrompt),
+            $address,
+        ]));
     }
 
     private static function fold(string $value): string
