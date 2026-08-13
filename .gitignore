@@ -1,0 +1,11 @@
+/vendor/
+/composer.lock
+/.phpunit.cache/
+/.idea/
+/corpus/
+*.tsv
+*.tsv.gz
+*.jsonl
+
+# Address corpora are real customer data — never commit them.
+/tests/fixtures/prod-*.txt

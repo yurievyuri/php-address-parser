@@ -1,0 +1,15 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Address\Parser\Country;
+
+final readonly class Country
+{
+    public function __construct(
+        public string $name,
+        public string $alpha2,
+        public string $alpha3 = '',
+    ) {
+    }
+}
