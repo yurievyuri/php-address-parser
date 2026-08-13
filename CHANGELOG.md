@@ -26,5 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file and a missing variable fails at load time with the variable named.
 - HTTP through PSR-18 with the client discovered from the host project, and enforced limits —
   3 seconds to connect, 10 seconds for the exchange — because PSR-18 does not standardise timeouts.
+- Acceptance measured against the production parser over 449 719 real address strings: country
+  resolved for 21 637 more addresses, token loss 19 954 → 34, empty line1 79.9% → 0.5%, a UK
+  postcode present but no country 18 038 → 294, postcodes without a digit 3 061 → 0, and no address
+  changed its country code.
 - Behavioural specification of 68 test cases built from real production addresses, including a
   property-based pass asserting that no part of an address is ever discarded.

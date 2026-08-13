@@ -36,6 +36,15 @@ final class RuleBasedParser implements AddressParserInterface
     /** Four or more digits, possibly grouped — the continental shape. Never a house number. */
     private const NUMERIC_POSTCODE = '\d[\d\s-]{2,}\d';
 
+    /**
+     * Countries whose name really is also a settlement, so keeping the component as the city is
+     * correct. Everything else — "United Kingdom", "England", "Germany" — is never a city, and a
+     * component naming one is removed even when nothing else is left to call the city.
+     */
+    private const CITY_STATES = [
+        'LU', 'MC', 'SG', 'PA', 'HK', 'MO', 'SM', 'AD', 'DJ', 'KW', 'MX', 'GT', 'VA', 'BN', 'QA',
+    ];
+
     /** Components that carry no information and must not become the city. */
     private const PLACEHOLDERS = ['-', '--', '.', 'n/a', 'na', 'none', 'null', 'tbc'];
 
@@ -205,13 +214,23 @@ final class RuleBasedParser implements AddressParserInterface
             }
         }
 
-        if (count($remaining) < 2) {
+        // Keeping the component is only ever right when its name is genuinely a settlement too.
+        // "Luxembourg" is a city; "United Kingdom" is not, and filing it as the city is worse than
+        // leaving the city empty — that value goes into a CITY column and onto correspondence.
+        if (count($remaining) < 2 && $this->namesACityState($components[$index])) {
             return $components;
         }
 
         unset($components[$index]);
 
         return array_values($components);
+    }
+
+    private function namesACityState(string $component): bool
+    {
+        $country = $this->countries->resolve($component);
+
+        return null !== $country && in_array($country->alpha2, self::CITY_STATES, true);
     }
 
     /**
@@ -272,6 +291,27 @@ final class RuleBasedParser implements AddressParserInterface
 
                 return [$components, $postcode, $resolved, $trace];
             }
+        }
+
+        // Last resort: a full UK postcode or Eircode anywhere in the address. Some sources write
+        // the postcode first ("E14 6JG United Kingdom London 11 Canton Street"), which the
+        // tail-first rules above never see. Safe to scan anywhere because these patterns carry an
+        // inward code — "9A 9AA" — and no house or unit number looks like that.
+        foreach ($components as $i => $component) {
+            if (1 !== preg_match('/(?:^|\s)(' . self::UK_POSTCODE . '|' . self::EIRCODE . ')(?:\s|$)/ui', $component, $match)) {
+                continue;
+            }
+
+            $postcode = $this->normalisePostcode($match[1], $spaceInPostCode);
+            $components[$i] = $this->trimEdges(str_replace($match[1], ' ', $component));
+            $trace['postcode'] = 'a full postcode found mid-component';
+
+            return [
+                $this->compact($components),
+                $postcode,
+                $country ?? $this->countryFromPostcodeShape($postcode, $trace),
+                $trace,
+            ];
         }
 
         return [$components, '', $country, $trace];
