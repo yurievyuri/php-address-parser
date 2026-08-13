@@ -79,7 +79,7 @@ return [
         [
             'service' => 'claude',
             'enabled' => true,
-            'model' => 'claude-opus-5',
+            'model' => 'claude-haiku-4-5',
             'api_key' => getenv('ANTHROPIC_API_KEY') ?: null,
             // 'aws_region' => getenv('AWS_REGION'),  // go through Bedrock instead
         ],
@@ -359,7 +359,7 @@ answers *"Invocation … with on-demand throughput isn't supported"*; the region
 
 | Vendor | Model id |
 |---|---|
-| Anthropic | `eu.anthropic.claude-haiku-4-5-20251001-v1:0` (cheapest, no `effort`), `eu.anthropic.claude-sonnet-5` (takes `effort`), `eu.anthropic.claude-opus-5` |
+| Anthropic | `eu.anthropic.claude-haiku-4-5-20251001-v1:0` — the default, $1/$5 per MTok, does not take `effort`; `eu.anthropic.claude-sonnet-5` — $3/$15, worth it only with `'effort' => 'low'` |
 | Amazon | `eu.amazon.nova-micro-v1:0`, `eu.amazon.nova-lite-v1:0`, `eu.amazon.nova-pro-v1:0` |
 | Mistral | `eu.mistral.pixtral-large-2502-v1:0`, `mistral.ministral-3-3b-instruct` |
 | Alibaba | `qwen.qwen3-32b-v1:0` |
@@ -379,6 +379,12 @@ field *we sent* — vendors word it differently ("Extra inputs are not permitted
 
 **`effort` has no "off" value.** `false` or omitting the key leaves the parameter out entirely,
 which is what a model that does not support it requires.
+
+**Start at the cheap end.** Splitting an address is extraction against a fixed schema, not
+reasoning, and it runs on every address the rules could not resolve — so the model choice is a cost
+decision made per thousand addresses. Haiku first; if acceptance says it is not enough, Sonnet at
+`'effort' => 'low'` before anything larger. Measured on 40 unresolved production addresses, Haiku
+came to **$1.87 per 1000**.
 
 ### libpostal### libpostal
 

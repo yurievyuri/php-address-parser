@@ -24,7 +24,7 @@ interface LlmClientInterface
     public function complete(string $systemPrompt, string $userPrompt, array $jsonSchema): array;
 
     /**
-     * Identifier for logs and cache keys — provider and model, e.g. "anthropic:claude-opus-5".
+     * Identifier for logs and cache keys — provider and model, e.g. "anthropic:claude-haiku-4-5".
      */
     public function describe(): string;
 }

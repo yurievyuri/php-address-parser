@@ -64,9 +64,9 @@ return [
         // requires: a bare "anthropic.claude-…" answers "Invocation … with on-demand throughput
         // isn't supported". These are the EU profiles active in our accounts (2026-08-13):
         //
-        //   Anthropic  eu.anthropic.claude-haiku-4-5-20251001-v1:0   cheapest, no effort support
-        //              eu.anthropic.claude-sonnet-5                  accepts effort
-        //              eu.anthropic.claude-opus-5                    strongest, priciest
+        //   Anthropic  eu.anthropic.claude-haiku-4-5-20251001-v1:0   the default: $1/$5 per MTok
+        //              eu.anthropic.claude-sonnet-5                  $3/$15, and only worth it with
+        //                                                            'effort' => 'low' — see below
         //   Amazon     eu.amazon.nova-micro-v1:0 / nova-lite-v1:0 / nova-pro-v1:0 / nova-2-lite-v1:0
         //   Mistral    eu.mistral.pixtral-large-2502-v1:0
         //
@@ -78,7 +78,10 @@ return [
             'model' => 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
             'region' => $env('AWS_REGION', 'eu-west-1'),
             'max_tokens' => 2048,
-            // Haiku rejects the parameter outright; Sonnet accepts it. false = do not send it.
+            // Splitting an address is extraction against a fixed schema, so the cheap end of the
+            // range is the right place to start. Move up only if acceptance says so, and then to
+            // Sonnet at 'effort' => 'low' rather than to a bigger model: Haiku rejects the
+            // parameter outright, Sonnet accepts it. false = do not send it at all.
             'effort' => false,
             // Vendor-specific extras, passed through untouched.
             'model_fields' => [],
