@@ -130,6 +130,27 @@ final class ConfigurationTest extends TestCase
         self::assertSame('15 Davies Street', $parser->parse('15 Davies Street, London, W1K 3DE')->line1);
     }
 
+    public function testTheBedrockServiceDefaultsToConverse(): void
+    {
+        // Converse is the unified shape; picking it by default is what makes a vendor switch a
+        // configuration change rather than a new adapter.
+        $parser = (new ParserFactory())->create([
+            'services' => [['service' => 'bedrock', 'model' => 'eu.amazon.nova-lite-v1:0']],
+        ]);
+
+        self::assertSame('15 Davies Street', $parser->parse('15 Davies Street, London, W1K 3DE')->line1);
+    }
+
+    public function testAnUnknownBedrockApiIsRejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/unknown bedrock api "soap"/');
+
+        (new ParserFactory())->create([
+            'services' => [['service' => 'bedrock', 'api' => 'soap']],
+        ]);
+    }
+
     public function testAnUnknownEffortIsRejectedEarly(): void
     {
         $this->expectException(\InvalidArgumentException::class);

@@ -13,6 +13,7 @@ use Codelot\AddressParser\Log\EventCollector;
 use Codelot\AddressParser\Log\FileLogger;
 use Codelot\AddressParser\Log\NotifierInterface;
 use Codelot\AddressParser\Llm\AnthropicLlmClient;
+use Codelot\AddressParser\Llm\BedrockConverseClient;
 use Codelot\AddressParser\Llm\BedrockLlmClient;
 use Codelot\AddressParser\Llm\GeminiLlmClient;
 use Codelot\AddressParser\Llm\GroqLlmClient;
@@ -437,20 +438,48 @@ final class ParserFactory
             ),
         ));
 
-        // Claude on Bedrock through the AWS SDK — credentials from the instance role, traffic
-        // inside the account, no extra dependency on a project that already runs on AWS.
-        $this->register('bedrock', fn (array $service): RefinerInterface => $this->llm(
-            $service,
-            'bedrock',
-            fn (): LlmClientInterface => new BedrockLlmClient(
-                model: (string) ($service['model'] ?? 'anthropic.claude-haiku-4-5-20251001-v1:0'),
-                region: (string) ($service['region'] ?? getenv('AWS_REGION') ?: 'eu-west-1'),
-                maxTokens: (int) ($service['max_tokens'] ?? 2048),
-                // Omitted by default: several models reject the parameter outright. Set it only for
-                // a model that supports it — Sonnet does, Haiku does not.
-                effort: self::effort($service['effort'] ?? null),
-            ),
-        ));
+        // Bedrock through the Converse API: one request shape for every vendor on the platform, so
+        // moving between Claude, Nova, Mistral, Qwen and the OSS models is a modelId in
+        // configuration. Credentials come from the instance role and traffic stays in the account.
+        $this->register('bedrock', function (array $service): RefinerInterface {
+            $api = strtolower((string) ($service['api'] ?? 'converse'));
+
+            if (!in_array($api, ['converse', 'invoke'], true)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'unknown bedrock api "%s"; expected converse (default) or invoke',
+                    $api,
+                ));
+            }
+
+            $model = (string) ($service['model'] ?? 'eu.anthropic.claude-haiku-4-5-20251001-v1:0');
+            $region = (string) ($service['region'] ?? getenv('AWS_REGION') ?: 'eu-west-1');
+            $maxTokens = (int) ($service['max_tokens'] ?? 2048);
+            // Omitted unless configured: several models reject the parameter outright.
+            $effort = self::effort($service['effort'] ?? null);
+
+            return $this->llm(
+                $service,
+                'bedrock',
+                fn (): LlmClientInterface => 'invoke' === $api
+                    // The older InvokeModel path, for a model Converse does not cover.
+                    ? new BedrockLlmClient(
+                        model: $model,
+                        region: $region,
+                        maxTokens: $maxTokens,
+                        effort: $effort,
+                    )
+                    : new BedrockConverseClient(
+                        modelId: $model,
+                        region: $region,
+                        maxTokens: $maxTokens,
+                        effort: $effort,
+                        additionalModelRequestFields: isset($service['model_fields']) && is_array($service['model_fields'])
+                            ? $service['model_fields']
+                            : [],
+                        logger: $this->logger,
+                    ),
+            );
+        });
 
         // Google Gemini, over its REST API — native JSON-schema output.
         $this->register('gemini', fn (array $service): RefinerInterface => $this->llm(

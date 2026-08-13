@@ -332,27 +332,45 @@ common enough that failing on the first one wastes the call.
 
 ### Bedrock
 
-`service: bedrock` reaches Claude through `aws/aws-sdk-php` rather than the Anthropic SDK:
-credentials come from the instance role, traffic stays inside the account, and a project already on
-AWS adds no dependency. Structured output is a forced tool call, which every Claude version on
-Bedrock supports.
+`service: bedrock` goes through the **Converse API** — one request shape for every vendor on the
+platform, so moving between Claude, Nova, Mistral, Qwen and the OSS models is a `modelId` in
+configuration rather than a new adapter. Verified against all five: the same request returns the
+same `toolUse` block from each.
 
 ```php
-['service' => 'bedrock', 'model' => 'eu.anthropic.claude-haiku-4-5-20251001-v1:0', 'effort' => false]
+[
+    'service' => 'bedrock',
+    'model' => 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',  // or eu.amazon.nova-lite-v1:0, mistral.…, qwen.…
+    'effort' => false,                    // false or absent = do not send the parameter
+    'model_fields' => [],                 // vendor-specific extras, passed through untouched
+    // 'api' => 'invoke',                 // the older InvokeModel path, for a model Converse omits
+]
 ```
 
-Two things to know, both learned the hard way:
+It uses `aws/aws-sdk-php`, which a project on AWS already has: credentials come from the instance
+role and the traffic stays inside the account. The SDK is optional — the client only asks for it
+when this service is enabled.
+
+Four things worth knowing, all learned against the live API:
 
 **On-demand invocation needs an inference profile, not a bare model id.** `anthropic.claude-…`
 answers *"Invocation … with on-demand throughput isn't supported"*; the regional profile
 (`eu.anthropic.claude-…`) works.
 
-**`effort` is per model, and there is no "off" value.** `false` or omitting the key leaves the
-parameter out entirely, which is what a model that does not support it requires. If a model rejects
-it anyway, the client retries once without it rather than failing — better than a list of model
-names in code that goes stale.
+**Vendor-specific parameters live in `model_fields`**, not in code, because what belongs there
+differs per model. Claude Haiku rejects `output_config.effort` outright — *"Extra inputs are not
+permitted"* — while Sonnet accepts it.
 
-### libpostal
+**Capability is discovered, not assumed.** If a model refuses the vendor fields, the client retries
+without them; if it cannot force a tool, without `toolChoice`; if it has no tools at all, by asking
+for JSON in the prompt. Each step is logged. The refusal is recognised by whether the error names a
+field *we sent* — vendors word it differently ("Extra inputs are not permitted" vs "extraneous key
+[x] is not permitted"), so matching phrases would be brittle.
+
+**`effort` has no "off" value.** `false` or omitting the key leaves the parameter out entirely,
+which is what a model that does not support it requires.
+
+### libpostal### libpostal
 
 libpostal is a statistical parser trained on tens of millions of addresses. It cannot be loaded
 into a PHP process — a C library plus gigabytes of models — so it runs as a sidecar and is reached

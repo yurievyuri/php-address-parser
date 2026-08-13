@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bedrock through the **Converse API** as the default path: one request shape across Claude, Nova,
+  Mistral, Qwen and the OSS models, so switching vendor is a `modelId`. Capability is discovered by
+  degrading — vendor fields, then forced tool choice, then tools altogether — rather than assumed
+  from the model name.
+
 - `Facade\LegacyArrayParser` — a drop-in replacement for a legacy static parsing function: returns
   the legacy key set, accepts everything an untyped signature accepted, and never throws (a failing
   pipeline falls back to the rule engine).
