@@ -26,8 +26,10 @@ final class GroqLlmClient extends HttpJsonLlmClient
         ?ClientInterface $http = null,
         ?RequestFactoryInterface $requests = null,
         ?StreamFactoryInterface $streams = null,
+        int $maxAttempts = 3,
+        float $retryBaseDelay = 0.5,
     ) {
-        parent::__construct($http, $requests, $streams);
+        parent::__construct($http, $requests, $streams, $maxAttempts, $retryBaseDelay);
     }
 
     public function complete(string $systemPrompt, string $userPrompt, array $jsonSchema): array

@@ -481,7 +481,19 @@ vendor/bin/phpunit
 
 The specification is the test suite: every case in `RuleBasedParserSpecTest` is a real production
 address, and every assertion records a defect that reached users. It includes a property-based pass
-over a 406-address corpus asserting the never-discard invariant.
+over a corpus asserting the never-discard invariant.
+
+**189 tests, 84% of statements.** Where the coverage is deliberately thin:
+
+| class | why |
+|---|---|
+| `AnthropicLlmClient` | needs `anthropic-ai/sdk`, an optional dependency — exercised live, not in CI |
+| `HttpClientFactory` | picks whichever PSR-18 client is installed; the branches depend on what is present |
+| `LogRecord` | a value object with no behaviour |
+
+Everything that decides an outcome is covered: the rules at 98%, the refiner at 99%, the pipeline
+at 93%, and every service client's failure paths — rate limits, refusals, truncation, malformed
+answers — because those were found live and would otherwise regress silently.
 
 ## Licence
 

@@ -532,6 +532,8 @@ final class ParserFactory
                     connectTimeout: (float) ($service['connect_timeout'] ?? $this->httpDefaults['connect_timeout']),
                     timeout: (float) ($service['timeout'] ?? $this->httpDefaults['timeout']),
                 ),
+                maxAttempts: (int) ($service['max_attempts'] ?? 3),
+                retryBaseDelay: (float) ($service['retry_delay'] ?? 0.5),
             ),
         ));
 
@@ -548,6 +550,8 @@ final class ParserFactory
                     connectTimeout: (float) ($service['connect_timeout'] ?? $this->httpDefaults['connect_timeout']),
                     timeout: (float) ($service['timeout'] ?? $this->httpDefaults['timeout']),
                 ),
+                maxAttempts: (int) ($service['max_attempts'] ?? 3),
+                retryBaseDelay: (float) ($service['retry_delay'] ?? 0.5),
             ),
         ));
 

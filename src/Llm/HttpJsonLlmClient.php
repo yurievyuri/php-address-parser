@@ -26,16 +26,14 @@ abstract class HttpJsonLlmClient implements LlmClientInterface
 
     private StreamFactoryInterface $streams;
 
-    /** How many times a retryable answer is retried before giving up. */
-    protected int $maxAttempts = 3;
-
-    /** Base backoff, doubled per attempt, used when the provider does not send Retry-After. */
-    protected float $retryBaseDelay = 0.5;
-
     public function __construct(
         ?ClientInterface $http = null,
         ?RequestFactoryInterface $requests = null,
         ?StreamFactoryInterface $streams = null,
+        /** How many times a retryable answer is retried before giving up. */
+        protected readonly int $maxAttempts = 3,
+        /** Base backoff, doubled per attempt, used when the provider does not send Retry-After. */
+        protected readonly float $retryBaseDelay = 0.5,
     ) {
         $this->http = $http ?? HttpClientFactory::create();
         $this->requests = $requests ?? Psr17FactoryDiscovery::findRequestFactory();

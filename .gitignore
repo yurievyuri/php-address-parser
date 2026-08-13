@@ -16,3 +16,4 @@
 *.local.php
 /config.local.*
 /scratch/
+build/
