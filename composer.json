@@ -26,9 +26,9 @@
         "php-http/discovery": "^1.19"
     },
     "require-dev": {
-        "guzzlehttp/guzzle": "^8.0",
+        "guzzlehttp/guzzle": "^7.8",
         "phpunit/phpunit": "^11.0",
-        "symfony/yaml": "^8.1"
+        "symfony/yaml": "^6.4 || ^7.0 || ^8.0"
     },
     "autoload": {
         "psr-4": {
@@ -44,6 +44,9 @@
         "sort-packages": true,
         "allow-plugins": {
             "php-http/discovery": true
+        },
+        "platform": {
+            "php": "8.2.0"
         }
     },
     "minimum-stability": "stable",
