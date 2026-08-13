@@ -315,6 +315,7 @@ final class ParserFactory
             systemPrompt: $this->prompt($service, 'system_prompt', LlmRefiner::DEFAULT_SYSTEM_PROMPT),
             userPrompt: $this->prompt($service, 'user_prompt', LlmRefiner::DEFAULT_USER_PROMPT),
             rejectInventedText: (bool) ($service['reject_invented_text'] ?? true),
+            requireCountryEvidence: (bool) ($service['require_country_evidence'] ?? true),
             // Everything the model is given comes from configuration: the prompts, the schema its
             // answer must satisfy, and how that answer maps onto the result fields.
             schema: $this->schema($service),

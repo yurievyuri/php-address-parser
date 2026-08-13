@@ -26,6 +26,7 @@ final class LlmRefinerTest extends TestCase
             'city' => 'Berlin',
             'postcode' => '10117',
             'country_code' => 'DE',
+            'country_evidence' => 'Berlin',
         ]));
 
         $result = $refiner->refine('Friedrichstrasse 43, Berlin, 10117', new ParsedAddress(), []);
@@ -45,6 +46,7 @@ final class LlmRefinerTest extends TestCase
             'city' => 'London',
             'postcode' => 'NW1 6XE', // never appeared in the input
             'country_code' => 'GB',
+            'country_evidence' => 'London',
         ]));
 
         $result = $refiner->refine('221B Baker Street, London', $draft, []);
@@ -77,6 +79,7 @@ final class LlmRefinerTest extends TestCase
             'city' => 'Berlin',
             'postcode' => '10117',
             'country_code' => 'DE',
+            'country_evidence' => 'Berlin',
         ]);
 
         $refiner = new LlmRefiner($client, cache: new InMemoryCache());
@@ -95,6 +98,7 @@ final class LlmRefinerTest extends TestCase
             'city' => 'London',
             'postcode' => 'W1K 3DE',
             'country_code' => 'GB',
+            'country_evidence' => 'London',
         ];
 
         $squashed = (new LlmRefiner($this->client($payload)))
@@ -104,6 +108,90 @@ final class LlmRefinerTest extends TestCase
 
         self::assertSame('W1K3DE', $squashed->postcode);
         self::assertSame('W1K 3DE', $spaced->postcode);
+    }
+
+    /**
+     * A model that recognises a street name and guesses the country around it produces a value
+     * that reads as data everywhere downstream. Requiring it to quote the evidence makes the guess
+     * checkable — and this one is not in the address.
+     */
+    public function testACountryTheModelCannotPointToIsDropped(): void
+    {
+        $refiner = new LlmRefiner($this->client([
+            'line1' => '2 Addison Avenue Kj Food & Wine',
+            'line2' => '',
+            'city' => '',
+            'postcode' => '',
+            'country_code' => 'US',
+            'country_evidence' => 'Addison Avenue is a common US street name',
+        ]));
+
+        $result = $refiner->refine('2 Addison Avenue  Kj Food & Wine', new ParsedAddress(), []);
+
+        self::assertSame('', $result->countryCode, 'a guess must not survive as a country');
+        self::assertSame('', $result->country);
+    }
+
+    public function testACountryQuotedFromTheAddressIsKept(): void
+    {
+        $refiner = new LlmRefiner($this->client([
+            'line1' => 'Ballysimon Road Dfs Furniture',
+            'line2' => '',
+            'city' => '',
+            'postcode' => '',
+            'country_code' => 'IE',
+            'country_evidence' => 'Ballysimon Road',
+        ]));
+
+        $result = $refiner->refine('Ballysimon Road  Dfs Furniture', new ParsedAddress(), []);
+
+        self::assertSame('IE', $result->countryCode);
+    }
+
+    public function testEvidenceIsComparedLooselyEnoughForRealTyping(): void
+    {
+        // Different case and punctuation must not fail an otherwise honest quote.
+        $refiner = new LlmRefiner($this->client([
+            'line1' => 'Rue Glesener 21',
+            'line2' => '',
+            'city' => 'Luxembourg',
+            'postcode' => '1631',
+            'country_code' => 'LU',
+            'country_evidence' => 'LUXEMBOURG,',
+        ]));
+
+        self::assertSame('LU', $refiner->refine('Rue Glesener 21, Luxembourg, 1631', new ParsedAddress(), [])->countryCode);
+    }
+
+    public function testAnEmptyEvidenceDropsTheCountry(): void
+    {
+        $refiner = new LlmRefiner($this->client([
+            'line1' => 'Somewhere',
+            'line2' => '',
+            'city' => '',
+            'postcode' => '',
+            'country_code' => 'FR',
+            'country_evidence' => '',
+        ]));
+
+        self::assertSame('', $refiner->refine('Somewhere', new ParsedAddress(), [])->countryCode);
+    }
+
+    public function testTheGuardCanBeTurnedOffForACallerThatWantsGuesses(): void
+    {
+        $refiner = new LlmRefiner(
+            $this->client([
+                'line1' => 'Somewhere',
+                'line2' => '',
+                'city' => '',
+                'postcode' => '',
+                'country_code' => 'FR',
+                'country_evidence' => '',
+            ]),
+            requireCountryEvidence: false,
+        );
+
+        self::assertSame('FR', $refiner->refine('Somewhere', new ParsedAddress(), [])->countryCode);
     }
 
     /**

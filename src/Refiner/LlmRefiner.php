@@ -48,6 +48,22 @@ final class LlmRefiner implements RefinerInterface
                evidence already says, and should not outvote it.
           Leave country_code empty when the evidence is genuinely ambiguous. An address with
           nothing but a street number and a five-digit code decides nothing.
+        - country_evidence must quote, word for word, the part of the address the country was read
+          from. Copy it from the input; never paraphrase, never explain, never write words that are
+          not there. If you cannot quote it, you do not know the country: leave both fields empty.
+
+          These count as evidence, and you should quote them when they are present:
+            * a country name, in any spelling ("England", "UAE", "Deutschland");
+            * a town, city, district or region that belongs to one country ("Uzhhorod", "Ballysimon
+              Road" in Limerick, "Kyiv", "Al Barsha"), including when the address never labels it
+              as the city;
+            * a postcode of a format that belongs to one country;
+            * a word whose language or script places it ("Yrittäjäntie" is Finnish).
+
+          These do not:
+            * a street name that exists in several countries ("Addison Avenue", "Main Street");
+            * a company or brand name;
+            * a bare number.
         - A UK postcode is written as outward code, a space, then the inward code (three
           characters), e.g. "B60 3DJ".
         - city is the settlement. It is never a country name unless the settlement really is named
@@ -80,6 +96,7 @@ final class LlmRefiner implements RefinerInterface
         'city' => 'city',
         'postcode' => 'postcode',
         'country_code' => 'country_code',
+        'country_evidence' => 'country_evidence',
     ];
 
     public function __construct(
@@ -92,6 +109,12 @@ final class LlmRefiner implements RefinerInterface
         private readonly string $systemPrompt = self::DEFAULT_SYSTEM_PROMPT,
         private readonly string $userPrompt = self::DEFAULT_USER_PROMPT,
         private readonly bool $rejectInventedText = true,
+        /**
+         * Drop a country the model could not point to in the address. Without this a model is free
+         * to recognise a street name and guess the country around it — a guess that reads as data
+         * everywhere downstream.
+         */
+        private readonly bool $requireCountryEvidence = true,
         /** @var array<string, mixed>|null the JSON Schema sent to the model; null uses the default */
         private readonly ?array $schema = null,
         /**
@@ -115,7 +138,7 @@ final class LlmRefiner implements RefinerInterface
         $cached = $this->cache?->get($key);
 
         if (is_array($cached)) {
-            return $this->toResult($cached, $draft, $spaceInPostCode);
+            return $this->toResult($cached, $draft, $spaceInPostCode, $address);
         }
 
         $data = $this->client->complete(
@@ -124,7 +147,7 @@ final class LlmRefiner implements RefinerInterface
             $this->schema ?? self::schema(),
         );
 
-        $result = $this->toResult($data, $draft, $spaceInPostCode);
+        $result = $this->toResult($data, $draft, $spaceInPostCode, $address);
 
         if ($this->rejectInventedText && !$this->onlyUsesInputWords($address, $result)) {
             $this->logger->warning('llm refinement rejected: it introduced text that is not in the input', [
@@ -173,8 +196,14 @@ final class LlmRefiner implements RefinerInterface
                 'city' => $string,
                 'postcode' => $string,
                 'country_code' => ['type' => 'string', 'description' => 'ISO 3166-1 alpha-2, or empty'],
+                'country_evidence' => [
+                    'type' => 'string',
+                    'description' => 'The exact words copied from the address that identify the country '
+                        . '(a country name, a city, a region, a postcode). Empty when the country was '
+                        . 'not determined.',
+                ],
             ],
-            'required' => ['line1', 'line2', 'city', 'postcode', 'country_code'],
+            'required' => ['line1', 'line2', 'city', 'postcode', 'country_code', 'country_evidence'],
             'additionalProperties' => false,
         ];
     }
@@ -182,13 +211,27 @@ final class LlmRefiner implements RefinerInterface
     /**
      * @param array<string, mixed> $data
      */
-    private function toResult(array $data, ParsedAddress $draft, bool $spaceInPostCode): ParsedAddress
+    private function toResult(array $data, ParsedAddress $draft, bool $spaceInPostCode, string $address = ''): ParsedAddress
     {
         $map = $this->fieldMap ?? self::DEFAULT_FIELD_MAP;
         $read = static fn (string $field): string => trim((string) ($data[$map[$field] ?? $field] ?? ''));
 
         $code = mb_strtoupper($read('country_code'));
         $country = '' === $code ? null : $this->countries->resolve($code);
+
+        if (null !== $country && $this->requireCountryEvidence) {
+            $evidence = $read('country_evidence');
+
+            if (!$this->quotesTheInput($evidence, $address)) {
+                $this->logger->info('country dropped: the model could not point to it in the address', [
+                    'address' => $address,
+                    'country' => $country->alpha2,
+                    'claimed_evidence' => $evidence,
+                ]);
+
+                $country = null;
+            }
+        }
         $postcode = $read('postcode');
 
         if (!$spaceInPostCode) {
@@ -226,6 +269,22 @@ final class LlmRefiner implements RefinerInterface
         }
 
         return true;
+    }
+
+    /**
+     * True when the quoted evidence really appears in the address. Compared on folded text so
+     * casing, accents and punctuation do not decide the outcome — the question is whether the
+     * words are there, not how they were typed.
+     */
+    private function quotesTheInput(string $evidence, string $address): bool
+    {
+        $evidence = self::fold($evidence);
+
+        if ('' === $evidence) {
+            return false;
+        }
+
+        return str_contains(self::fold(explode('|', $address)[0]), $evidence);
     }
 
     private function cacheKey(string $address, bool $spaceInPostCode): string

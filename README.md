@@ -142,6 +142,18 @@ a remote service is down.
 that supplies a postcode it "knows" for a street is writing plausible, wrong data into your
 records — worse than an address that failed to parse — so such answers are rejected.
 
+**And it may not guess a country.** The country is the one field that cannot be checked that way —
+a code is never a substring of the address. So the model must also return `country_evidence`: the
+words it read the country from, quoted from the input. If those words are not in the address, the
+country is dropped and the reason is logged.
+
+This is not theoretical. Measured on 150 unresolved production addresses, requiring the evidence
+cut one model's "improvements" from 14 to 7 — the other half were guesses like
+`2 Addison Avenue Kj Food & Wine → US`, where the street exists in London too. A wrong country
+flows into compliance checks and payment instructions; an empty one does not.
+
+Set `reject_invented_text: false` or `require_country_evidence: false` to disable either guard.
+
 ## Logging and error collection
 
 Two things, both configured in the same block.

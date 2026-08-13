@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The model must quote the words it read a country from (`country_evidence`), and a country it
+  cannot point to in the address is dropped. On 150 unresolved production addresses this removed
+  half of one model's apparent improvements — they were guesses from street names.
+
 - Bedrock through the **Converse API** as the default path: one request shape across Claude, Nova,
   Mistral, Qwen and the OSS models, so switching vendor is a `modelId`. Capability is discovered by
   degrading — vendor fields, then forced tool choice, then tools altogether — rather than assumed
