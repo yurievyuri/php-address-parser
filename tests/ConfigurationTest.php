@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Tests;
+namespace Codelot\AddressParser\Tests;
 
-use Address\Parser\Config\Configuration;
-use Address\Parser\Config\ParserFactory;
-use Address\Parser\ParsedAddress;
-use Address\Parser\Refiner\RefinerInterface;
+use Codelot\AddressParser\Config\Configuration;
+use Codelot\AddressParser\Config\ParserFactory;
+use Codelot\AddressParser\ParsedAddress;
+use Codelot\AddressParser\Refiner\RefinerInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -157,7 +157,7 @@ final class ConfigurationTest extends TestCase
             // environment, with no bridge between that environment and the library.
             $code = strtoupper(substr('de-DE', 0, 2));
 
-            return ['services' => [['class' => \Address\Parser\Tests\StubRefiner::class, 'countryCode' => $code]]];
+            return ['services' => [['class' => \Codelot\AddressParser\Tests\StubRefiner::class, 'countryCode' => $code]]];
             PHP);
 
         try {

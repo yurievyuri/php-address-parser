@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Log;
+namespace Codelot\AddressParser\Log;
 
 use Psr\Log\AbstractLogger;
 use Psr\Log\LoggerInterface;

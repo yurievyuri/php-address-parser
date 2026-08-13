@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Config;
+namespace Codelot\AddressParser\Config;
 
 /**
  * Reads the pipeline configuration and resolves environment references in it.

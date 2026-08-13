@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Tests;
+namespace Codelot\AddressParser\Tests;
 
-use Address\Parser\Config\ParserFactory;
-use Address\Parser\Log\EventCollector;
-use Address\Parser\Log\FileLogger;
-use Address\Parser\Log\LogRecord;
-use Address\Parser\Log\NotifierInterface;
+use Codelot\AddressParser\Config\ParserFactory;
+use Codelot\AddressParser\Log\EventCollector;
+use Codelot\AddressParser\Log\FileLogger;
+use Codelot\AddressParser\Log\LogRecord;
+use Codelot\AddressParser\Log\NotifierInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LogLevel;
@@ -198,14 +198,14 @@ final class LoggingTest extends TestCase
 /**
  * A service that is always down — the shape of a provider outage.
  */
-final class ExplodingRefiner implements \Address\Parser\Refiner\RefinerInterface
+final class ExplodingRefiner implements \Codelot\AddressParser\Refiner\RefinerInterface
 {
     public function name(): string
     {
         return 'exploding';
     }
 
-    public function refine(string $address, \Address\Parser\ParsedAddress $draft, array $issues, bool $spaceInPostCode = false): \Address\Parser\ParsedAddress
+    public function refine(string $address, \Codelot\AddressParser\ParsedAddress $draft, array $issues, bool $spaceInPostCode = false): \Codelot\AddressParser\ParsedAddress
     {
         throw new \RuntimeException('service unavailable');
     }

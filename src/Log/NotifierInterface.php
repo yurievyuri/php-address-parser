@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Log;
+namespace Codelot\AddressParser\Log;
 
 /**
  * Where severe events go on their way out of this process — an alerting channel, a queue, a

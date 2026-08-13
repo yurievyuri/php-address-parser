@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Llm;
+namespace Codelot\AddressParser\Llm;
 
 /**
  * Claude, via the official PHP SDK — either the Anthropic API or the Bedrock endpoint.

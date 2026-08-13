@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Llm;
+namespace Codelot\AddressParser\Llm;
 
 /**
  * Claude on Amazon Bedrock, through the AWS SDK that a project on AWS already has.

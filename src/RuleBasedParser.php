@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser;
+namespace Codelot\AddressParser;
 
-use Address\Parser\Country\Country;
-use Address\Parser\Country\CountryResolverInterface;
-use Address\Parser\Country\Iso3166CountryResolver;
+use Codelot\AddressParser\Country\Country;
+use Codelot\AddressParser\Country\CountryResolverInterface;
+use Codelot\AddressParser\Country\Iso3166CountryResolver;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 

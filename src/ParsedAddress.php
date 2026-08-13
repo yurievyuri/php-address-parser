@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser;
+namespace Codelot\AddressParser;
 
 /**
  * The result of parsing one address string.

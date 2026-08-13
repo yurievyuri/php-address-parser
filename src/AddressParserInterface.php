@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser;
+namespace Codelot\AddressParser;
 
 /**
  * Every parsing strategy implements this: the rule engine, an LLM-backed refiner, a libpostal

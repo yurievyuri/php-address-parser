@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Llm;
+namespace Codelot\AddressParser\Llm;
 
 /**
  * The seam every LLM provider plugs into.

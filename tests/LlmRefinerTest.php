@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Tests;
+namespace Codelot\AddressParser\Tests;
 
-use Address\Parser\Llm\LlmClientInterface;
-use Address\Parser\ParsedAddress;
-use Address\Parser\Refiner\LlmRefiner;
+use Codelot\AddressParser\Llm\LlmClientInterface;
+use Codelot\AddressParser\ParsedAddress;
+use Codelot\AddressParser\Refiner\LlmRefiner;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 

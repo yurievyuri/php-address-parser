@@ -1,5 +1,5 @@
 {
-    "name": "yurievyuri/address-parser",
+    "name": "codelot/address-parser",
     "description": "Parses free-form postal address strings into structured components: line1, line2, city, postcode, country.",
     "type": "library",
     "keywords": [
@@ -13,7 +13,8 @@
     "authors": [
         {
             "name": "Yura Yurev",
-            "email": "yurievyuri@live.com"
+            "email": "yurievyuri@live.com",
+            "homepage": "https://codelot.uk"
         }
     ],
     "require": {
@@ -32,12 +33,12 @@
     },
     "autoload": {
         "psr-4": {
-            "Address\\Parser\\": "src/"
+            "Codelot\\AddressParser\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Address\\Parser\\Tests\\": "tests/"
+            "Codelot\\AddressParser\\Tests\\": "tests/"
         }
     },
     "config": {
@@ -54,5 +55,6 @@
         "anthropic-ai/sdk": "Needed only by the built-in Claude service.",
         "symfony/yaml": "Lets you keep the service pipeline in a YAML file.",
         "guzzlehttp/guzzle": "Any PSR-18 client will do; discovery finds the one your project already has."
-    }
+    },
+    "homepage": "https://codelot.uk"
 }

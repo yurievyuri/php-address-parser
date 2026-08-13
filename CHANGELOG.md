@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Package name `codelot/address-parser` with the `Codelot\AddressParser\` namespace. A generic
+  top-level namespace invites collisions with other packages and with host-project code; PSR-4
+  expects a vendor name there.
+
 - Rule-based parser for free-form postal addresses, with rules derived from measuring failures
   across 297 026 production address strings.
 - Country resolution behind an interface, with a bundled ISO 3166-1 table and the aliases real

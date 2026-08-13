@@ -4,7 +4,7 @@ Splits free-form postal address strings into structured components — `line1`, 
 `postcode`, `country` — for addresses that were typed by people rather than validated by a form.
 
 ```php
-use Address\Parser\RuleBasedParser;
+use Codelot\AddressParser\RuleBasedParser;
 
 $address = (new RuleBasedParser())->parse('1 Harbour House Harbour Way Shoreham-By-Sea West Sussex BN43 5HZ');
 
@@ -19,7 +19,7 @@ consulted for the addresses that came out wrong, and paid for only there.
 ## Install
 
 ```bash
-composer require yurievyuri/address-parser
+composer require codelot/address-parser
 ```
 
 PHP 8.2+, `ext-mbstring`. Everything else is optional and only needed by the provider you enable.

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Tests;
+namespace Codelot\AddressParser\Tests;
 
 use Psr\SimpleCache\CacheInterface;
 

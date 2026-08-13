@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Llm;
+namespace Codelot\AddressParser\Llm;
 
-use Address\Parser\Http\HttpClientFactory;
+use Codelot\AddressParser\Http\HttpClientFactory;
 use Http\Discovery\Psr17FactoryDiscovery;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;

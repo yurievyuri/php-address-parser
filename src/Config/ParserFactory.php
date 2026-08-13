@@ -2,27 +2,27 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Config;
+namespace Codelot\AddressParser\Config;
 
-use Address\Parser\AddressParserInterface;
-use Address\Parser\Country\CountryResolverInterface;
-use Address\Parser\Country\Iso3166CountryResolver;
-use Address\Parser\EscalatingParser;
-use Address\Parser\Http\HttpClientFactory;
-use Address\Parser\Log\EventCollector;
-use Address\Parser\Log\FileLogger;
-use Address\Parser\Log\NotifierInterface;
-use Address\Parser\Llm\AnthropicLlmClient;
-use Address\Parser\Llm\BedrockLlmClient;
-use Address\Parser\Llm\GeminiLlmClient;
-use Address\Parser\Llm\GroqLlmClient;
-use Address\Parser\Llm\LlmClientInterface;
-use Address\Parser\Quality\Issue;
-use Address\Parser\Quality\QualityInspector;
-use Address\Parser\Refiner\LibpostalRefiner;
-use Address\Parser\Refiner\LlmRefiner;
-use Address\Parser\Refiner\RefinerInterface;
-use Address\Parser\RuleBasedParser;
+use Codelot\AddressParser\AddressParserInterface;
+use Codelot\AddressParser\Country\CountryResolverInterface;
+use Codelot\AddressParser\Country\Iso3166CountryResolver;
+use Codelot\AddressParser\EscalatingParser;
+use Codelot\AddressParser\Http\HttpClientFactory;
+use Codelot\AddressParser\Log\EventCollector;
+use Codelot\AddressParser\Log\FileLogger;
+use Codelot\AddressParser\Log\NotifierInterface;
+use Codelot\AddressParser\Llm\AnthropicLlmClient;
+use Codelot\AddressParser\Llm\BedrockLlmClient;
+use Codelot\AddressParser\Llm\GeminiLlmClient;
+use Codelot\AddressParser\Llm\GroqLlmClient;
+use Codelot\AddressParser\Llm\LlmClientInterface;
+use Codelot\AddressParser\Quality\Issue;
+use Codelot\AddressParser\Quality\QualityInspector;
+use Codelot\AddressParser\Refiner\LibpostalRefiner;
+use Codelot\AddressParser\Refiner\LlmRefiner;
+use Codelot\AddressParser\Refiner\RefinerInterface;
+use Codelot\AddressParser\RuleBasedParser;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
 use Psr\Log\NullLogger;

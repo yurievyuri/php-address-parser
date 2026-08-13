@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Tests;
+namespace Codelot\AddressParser\Tests;
 
-use Address\Parser\EscalatingParser;
-use Address\Parser\ParsedAddress;
-use Address\Parser\Quality\Issue;
-use Address\Parser\Refiner\RefinerInterface;
-use Address\Parser\RuleBasedParser;
+use Codelot\AddressParser\EscalatingParser;
+use Codelot\AddressParser\ParsedAddress;
+use Codelot\AddressParser\Quality\Issue;
+use Codelot\AddressParser\Refiner\RefinerInterface;
+use Codelot\AddressParser\RuleBasedParser;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 

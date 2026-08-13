@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Refiner;
+namespace Codelot\AddressParser\Refiner;
 
-use Address\Parser\Country\CountryResolverInterface;
-use Address\Parser\Country\Iso3166CountryResolver;
-use Address\Parser\Http\HttpClientFactory;
-use Address\Parser\ParsedAddress;
+use Codelot\AddressParser\Country\CountryResolverInterface;
+use Codelot\AddressParser\Country\Iso3166CountryResolver;
+use Codelot\AddressParser\Http\HttpClientFactory;
+use Codelot\AddressParser\ParsedAddress;
 use Http\Discovery\Psr17FactoryDiscovery;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;

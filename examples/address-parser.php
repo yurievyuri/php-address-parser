@@ -40,7 +40,7 @@ return [
             'min_level' => 'warning',    // what is kept in memory
             'notify_level' => 'critical',// from which severity the notifier is called
             'limit' => 1000,             // cap on retained records, so a long batch stays bounded
-            // A class implementing Address\Parser\Log\NotifierInterface — this is the hand-off
+            // A class implementing Codelot\AddressParser\Log\NotifierInterface — this is the hand-off
             // to the rest of the system: alerting, a queue, a webhook.
             // 'notifier' => App\Address\SlackNotifier::class,
         ],

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Quality;
+namespace Codelot\AddressParser\Quality;
 
-use Address\Parser\Country\CountryResolverInterface;
-use Address\Parser\Country\Iso3166CountryResolver;
-use Address\Parser\ParsedAddress;
+use Codelot\AddressParser\Country\CountryResolverInterface;
+use Codelot\AddressParser\Country\Iso3166CountryResolver;
+use Codelot\AddressParser\ParsedAddress;
 
 /**
  * Judges one parse result against the same measures the rule engine is held to on the corpus.

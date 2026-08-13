@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Refiner;
+namespace Codelot\AddressParser\Refiner;
 
-use Address\Parser\Country\CountryResolverInterface;
-use Address\Parser\Country\Iso3166CountryResolver;
-use Address\Parser\Llm\LlmClientInterface;
-use Address\Parser\ParsedAddress;
-use Address\Parser\Quality\Issue;
+use Codelot\AddressParser\Country\CountryResolverInterface;
+use Codelot\AddressParser\Country\Iso3166CountryResolver;
+use Codelot\AddressParser\Llm\LlmClientInterface;
+use Codelot\AddressParser\ParsedAddress;
+use Codelot\AddressParser\Quality\Issue;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Psr\SimpleCache\CacheInterface;

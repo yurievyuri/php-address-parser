@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Country;
+namespace Codelot\AddressParser\Country;
 
 /**
  * Resolves a candidate string ("United Kingdom", "UK", "GBR", "gb") to a country.

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Refiner;
+namespace Codelot\AddressParser\Refiner;
 
-use Address\Parser\ParsedAddress;
+use Codelot\AddressParser\ParsedAddress;
 
 /**
  * A second opinion on an address the rule engine could not resolve cleanly.
@@ -16,7 +16,7 @@ use Address\Parser\ParsedAddress;
 interface RefinerInterface
 {
     /**
-     * @param list<\Address\Parser\Quality\Issue> $issues what the inspector found wrong with $draft
+     * @param list<\Codelot\AddressParser\Quality\Issue> $issues what the inspector found wrong with $draft
      *
      * @return ParsedAddress the corrected result, or $draft unchanged if it cannot do better
      */

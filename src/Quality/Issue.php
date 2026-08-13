@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Quality;
+namespace Codelot\AddressParser\Quality;
 
 /**
  * The ways a parse can come out wrong. These are the same six measures the rule engine is held to

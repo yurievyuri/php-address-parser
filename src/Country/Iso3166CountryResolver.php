@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Country;
+namespace Codelot\AddressParser\Country;
 
 /**
  * Resolves against a built-in ISO 3166-1 table, plus the aliases real addresses actually carry:

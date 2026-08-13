@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser;
+namespace Codelot\AddressParser;
 
-use Address\Parser\Quality\Issue;
-use Address\Parser\Quality\QualityInspector;
-use Address\Parser\Refiner\RefinerInterface;
+use Codelot\AddressParser\Quality\Issue;
+use Codelot\AddressParser\Quality\QualityInspector;
+use Codelot\AddressParser\Refiner\RefinerInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 

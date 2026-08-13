@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Address\Parser\Log;
+namespace Codelot\AddressParser\Log;
 
 /**
  * One collected event: a PSR-3 level, a message, and its context.
